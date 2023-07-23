@@ -8,6 +8,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <PackageReference Include="Bogus" Version="34.0.2" />
       <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0-preview3.23201.1" />
     </ItemGroup>
 
