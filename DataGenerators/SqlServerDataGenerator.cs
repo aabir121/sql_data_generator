@@ -21,11 +21,20 @@ namespace SQLDataGenerator.DataGenerators
 
         protected override List<string> GetTableNames(IDbConnection connection)
         {
-            // Implement the query to get table names for SQL Server.
-            // Use the provided connection to execute the query.
-            // Return the list of table names.
-            return null;
+            var tableNames = new List<string>();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @SchemaName";
+            command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar) { Value = Config.SchemaName });
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                tableNames.Add(reader.GetString(0));
+            }
+
+            return tableNames;
         }
+
 
         protected override Dictionary<string, TableInfo> GetTableData(IDbConnection connection, List<string> tableNames)
         {
