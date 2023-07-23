@@ -57,3 +57,6 @@ bld/
 [Bb]in/
 [Oo]bj/
 [Ll]og/
+
+# JetBrains Rider
+.idea/
