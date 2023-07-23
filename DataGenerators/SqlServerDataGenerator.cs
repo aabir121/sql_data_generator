@@ -1,8 +1,5 @@
-using System;
-using System.Collections.Generic;
 using System.Data;
 using Microsoft.Data.SqlClient;
-using Bogus;
 using SQLDataGenerator.Models;
 
 namespace SQLDataGenerator.DataGenerators
@@ -117,6 +114,35 @@ namespace SQLDataGenerator.DataGenerators
             // Disable foreign key constraints before inserting data.
             DisableForeignKeyCheck((SqlConnection)connection);
 
+            // Insert data into referenced tables first.
+            var referencingColumns = new Dictionary<string, string>();
+            foreach (var column in columns)
+            {
+                if (foreignKeyRelationships.TryGetValue(column, out var referencedColumn))
+                {
+                    referencingColumns.Add(column, referencedColumn);
+                }
+            }
+
+            if (referencingColumns.Count > 0)
+            {
+                var referencedTables = new HashSet<string>();
+                foreach (var referencedTable in referencingColumns.Values.Select(referencedColumn => referencedColumn.Substring(0, referencedColumn.IndexOf('.'))))
+                {
+                    referencedTables.Add(referencedTable);
+                }
+
+                foreach (var referencedTable in referencedTables)
+                {
+                    if (referencedTable == tableName) continue;
+                    // Insert data into referenced table first.
+                    var referencedTableInfo =
+                        GetTableData(connection, new List<string> { referencedTable })[referencedTable];
+                    InsertDataIntoTable(connection, referencedTable, referencedTableInfo.Columns,
+                        referencedTableInfo.ColumnTypes, referencedTableInfo.ForeignKeyRelationships);
+                }
+            }
+
             using (var command = new SqlCommand(insertSql, (SqlConnection)connection))
             {
                 // Generate and insert data for each row in the table.
@@ -126,7 +152,21 @@ namespace SQLDataGenerator.DataGenerators
                     foreach (var column in columns)
                     {
                         if (!columnTypes.TryGetValue(column, out var dataType)) continue;
-                        var value = GenerateRandomValueForDataType(dataType, column);
+                        object? value;
+                        if (foreignKeyRelationships.TryGetValue(column, out var referencedColumn))
+                        {
+                            // Generate data for referencing column based on the referenced table.
+                            var referencedTable = referencedColumn[..referencedColumn.IndexOf('.')];
+                            var referencedTableIdColumn =
+                                referencedColumn[(referencedColumn.IndexOf('.') + 1)..];
+                            value = GenerateRandomValueForReferencingColumn(connection, referencedTable,
+                                referencedTableIdColumn);
+                        }
+                        else
+                        {
+                            value = GenerateRandomValueForDataType(dataType, column);
+                        }
+
                         command.Parameters.AddWithValue($"@{column}", value);
                     }
 
@@ -137,6 +177,19 @@ namespace SQLDataGenerator.DataGenerators
             // Re-enable foreign key constraints after data insertion.
             EnableForeignKeyCheck((SqlConnection)connection);
         }
+
+        private static object? GenerateRandomValueForReferencingColumn(IDbConnection connection, string referencedTable,
+            string referencedIdColumn)
+        {
+            // Assuming the primary key of the referenced table is an integer-based type (e.g., int, bigint, smallint, tinyint)
+            // or a uniqueidentifier (GUID).
+            using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT TOP 1 {referencedIdColumn} FROM {referencedTable} ORDER BY NEWID()";
+
+            var result = command.ExecuteScalar();
+            return result;
+        }
+
 
         protected override void DisableForeignKeyCheck(SqlConnection connection)
         {

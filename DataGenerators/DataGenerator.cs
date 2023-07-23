@@ -77,7 +77,7 @@ namespace SQLDataGenerator.DataGenerators
             return new Faker();
         }
         
-        protected object GenerateRandomValueForDataType(string dataType, string columnName)
+        protected object? GenerateRandomValueForDataType(string dataType, string columnName)
         {
             // Use Faker to generate random data based on column type and name.
             // You can add more data type cases as needed to handle other column types.
