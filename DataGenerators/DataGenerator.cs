@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.Common;
 using Bogus;
 using Microsoft.Data.SqlClient;
 using SQLDataGenerator.Models;
@@ -62,21 +63,21 @@ namespace SQLDataGenerator.DataGenerators
 
         protected abstract void EnableForeignKeyCheck(SqlConnection connection);
 
-        protected string GetParamPlaceholders(List<string> columns)
+        protected string GetParamPlaceholders(List<string> columns, int rowIdx)
         {
             var placeholders = new List<string>();
             for (var i = 0; i < columns.Count; i++)
             {
-                placeholders.Add($"@param{i}");
+                placeholders.Add($"@{columns[i]}{rowIdx}");
             }
             return string.Join(", ", placeholders);
         }
-        
+
         private static Faker CreateFaker()
         {
             return new Faker();
         }
-        
+
         protected object? GenerateRandomValueForDataType(string dataType, string columnName)
         {
             // Use Faker to generate random data based on column type and name.
@@ -85,6 +86,7 @@ namespace SQLDataGenerator.DataGenerators
             {
                 case "nvarchar":
                 case "varchar":
+                case "text":
                     if (columnName.ToLower().Contains("name") || columnName.ToLower().Contains("fullname"))
                     {
                         return _faker.Name.FullName();

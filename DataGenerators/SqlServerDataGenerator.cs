@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text;
 using Microsoft.Data.SqlClient;
 using SQLDataGenerator.Models;
 
@@ -48,7 +49,7 @@ namespace SQLDataGenerator.DataGenerators
                     command.CommandText =
                         "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @SchemaName AND TABLE_NAME = @TableName";
                     command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar)
-                        { Value = Config.SchemaName });
+                    { Value = Config.SchemaName });
                     command.Parameters.Add(new SqlParameter("@TableName", SqlDbType.NVarChar) { Value = tableName });
 
                     using (var reader = command.ExecuteReader())
@@ -108,47 +109,41 @@ namespace SQLDataGenerator.DataGenerators
         protected override void InsertDataIntoTable(IDbConnection connection, string tableName, List<string> columns,
             Dictionary<string, string> columnTypes, Dictionary<string, string> foreignKeyRelationships)
         {
-            var insertSql =
-                $"INSERT INTO {tableName} ({string.Join(", ", columns)}) VALUES ({GetParamPlaceholders(columns)})";
-
             // Disable foreign key constraints before inserting data.
             DisableForeignKeyCheck((SqlConnection)connection);
 
-            // Insert data into referenced tables first.
-            var referencingColumns = new Dictionary<string, string>();
-            foreach (var column in columns)
-            {
-                if (foreignKeyRelationships.TryGetValue(column, out var referencedColumn))
-                {
-                    referencingColumns.Add(column, referencedColumn);
-                }
-            }
 
-            if (referencingColumns.Count > 0)
+            var primaryColumn = columns.FirstOrDefault(); // Assuming the first column is the primary key column.
+
+            // Generate and insert data in batches.
+            var batchSize = 100; // Set the desired batch size.
+            var totalRows = Config.NumberOfRows;
+            var batches = (totalRows + batchSize - 1) / batchSize; // Calculate the number of batches.
+
+            for (var batchIndex = 0; batchIndex < batches; batchIndex++)
             {
-                var referencedTables = new HashSet<string>();
-                foreach (var referencedTable in referencingColumns.Values.Select(referencedColumn => referencedColumn.Substring(0, referencedColumn.IndexOf('.'))))
+                var startIndex = batchIndex * batchSize;
+                var endIndex = Math.Min(startIndex + batchSize, totalRows);
+                Console.WriteLine($"Preparing Insert statements for {tableName} and for row number {startIndex} till {endIndex}");
+
+
+                var insertSql = new StringBuilder($"INSERT INTO {Config.SchemaName}.{tableName} ({string.Join(", ", columns)}) VALUES ");
+
+                for (var i = startIndex; i < endIndex; i++)
                 {
-                    referencedTables.Add(referencedTable);
+                    insertSql.Append($"({GetParamPlaceholders(columns, i)}),");
                 }
 
-                foreach (var referencedTable in referencedTables)
-                {
-                    if (referencedTable == tableName) continue;
-                    // Insert data into referenced table first.
-                    var referencedTableInfo =
-                        GetTableData(connection, new List<string> { referencedTable })[referencedTable];
-                    InsertDataIntoTable(connection, referencedTable, referencedTableInfo.Columns,
-                        referencedTableInfo.ColumnTypes, referencedTableInfo.ForeignKeyRelationships);
-                }
-            }
 
-            using (var command = new SqlCommand(insertSql, (SqlConnection)connection))
-            {
-                // Generate and insert data for each row in the table.
-                for (var i = 0; i < Config.NumberOfRows; i++)
+                insertSql.Length--;
+
+                using var command = new SqlCommand(insertSql.ToString(), (SqlConnection)connection);
+                // Create a new batch of parameters for each iteration.
+                command.Parameters.Clear();
+
+                // Generate and insert data for each row in the batch.
+                for (var rowIndex = startIndex; rowIndex < endIndex; rowIndex++)
                 {
-                    command.Parameters.Clear();
                     foreach (var column in columns)
                     {
                         if (!columnTypes.TryGetValue(column, out var dataType)) continue;
@@ -159,32 +154,42 @@ namespace SQLDataGenerator.DataGenerators
                             var referencedTable = referencedColumn[..referencedColumn.IndexOf('.')];
                             var referencedTableIdColumn =
                                 referencedColumn[(referencedColumn.IndexOf('.') + 1)..];
-                            value = GenerateRandomValueForReferencingColumn(connection, referencedTable,
+                            value = GenerateRandomValueForReferencingColumn(connection, Config.SchemaName, referencedTable,
                                 referencedTableIdColumn);
                         }
                         else
                         {
-                            value = GenerateRandomValueForDataType(dataType, column);
+                            if (column == primaryColumn && dataType.Equals("int"))
+                            {
+                                value = (batchIndex * batchSize) + rowIndex + 1;
+                            }
+                            else
+                            {
+                                value = GenerateRandomValueForDataType(dataType, column);
+                            }
                         }
 
-                        command.Parameters.AddWithValue($"@{column}", value);
+                        command.Parameters.AddWithValue($"@{column}{rowIndex}", value);
                     }
-
-                    command.ExecuteNonQuery();
                 }
+
+                Console.WriteLine($"Inserting batch data for {tableName} and for row number {startIndex} till {endIndex}");
+                command.ExecuteNonQuery();
             }
 
             // Re-enable foreign key constraints after data insertion.
             EnableForeignKeyCheck((SqlConnection)connection);
         }
 
-        private static object? GenerateRandomValueForReferencingColumn(IDbConnection connection, string referencedTable,
+
+
+        private static object? GenerateRandomValueForReferencingColumn(IDbConnection connection, string schemaName, string referencedTable,
             string referencedIdColumn)
         {
             // Assuming the primary key of the referenced table is an integer-based type (e.g., int, bigint, smallint, tinyint)
             // or a uniqueidentifier (GUID).
             using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT TOP 1 {referencedIdColumn} FROM {referencedTable} ORDER BY NEWID()";
+            command.CommandText = $"SELECT TOP 1 {referencedIdColumn} FROM {schemaName}.{referencedTable} ORDER BY NEWID()";
 
             var result = command.ExecuteScalar();
             return result;
