@@ -1,6 +1,6 @@
 # Data Generator Tool
 
-The Data Generator Tool is a C# .NET Core console application that allows you to generate random data for SQL Server databases. It provides an interactive command-line interface to specify the database server, database name, schema name, table names, and the number of rows to generate data for. The tool abides by clean coding principles, SOLID principles, and design patterns to maintain code organization and extensibility.
+The Data Generator Tool is a C# .NET Core console application that allows you to generate random data for SQL Server databases. It provides an interactive command-line interface to specify the database server, database name, schema name, table names, and the number of rows to generate data. The tool aims to abide by clean coding principles, SOLID principles, and design patterns to maintain code organization and extensibility. Currently this tool assumes that no rows are present in any of those tables in the database and the primary key is an integer column.
 
 ## Features
 
