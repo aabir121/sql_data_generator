@@ -1,0 +1,161 @@
+{
+  "Tables": {
+    "Users": {
+      "ValidValues": {
+        "VerificationStatus": [
+          "Verified",
+          "Pending",
+          "UnVerified"
+        ],
+        "AccountStatus": [
+          "Active",
+          "Suspended",
+          "DeActivated"
+        ]
+      },
+      "NumberOfRows": 100000
+    },
+    "Properties": {
+      "NumberOfRows": 30000,
+      "ValidValues": {
+        "MaxOccupancy": "1-16",
+        "PropertyStatus": [
+          "Available",
+          "Reserved",
+          "Under-Maintenance"
+        ],
+        "PropertyType": [
+          "Apartment",
+          "House",
+          "Condominium",
+          "Villa",
+          "Cottage",
+          "Bungalow",
+          "Guesthouse",
+          "Townhouse",
+          "Loft",
+          "Cabin",
+          "Chalet",
+          "Bed and Breakfast",
+          "Farm stay",
+          "Boat",
+          "Tiny House",
+          "Treehouse",
+          "Campsite",
+          "Tent",
+          "Yurt",
+          "Igloo",
+          "Castle",
+          "Dome House",
+          "Earth House",
+          "Bus",
+          "RV",
+          "Camper/RV",
+          "Caravan",
+          "Hut",
+          "Minsu (Taiwan)",
+          "Ryokan (Japan)",
+          "Other"
+        ]
+      }
+    },
+    "Amenities": {
+      "NumberOfRows": 20,
+      "ValidValues": {
+        "AmenityName": [
+          "Wifi",
+          "Air conditioning",
+          "Heating",
+          "Kitchen",
+          "Free parking on premises",
+          "Washer",
+          "Dryer",
+          "Essentials",
+          "Towels",
+          "Bed linens",
+          "Hangers",
+          "Iron",
+          "Hair dryer",
+          "Laptop-friendly workspace",
+          "TV",
+          "Cable TV",
+          "Hot water",
+          "Shampoo",
+          "Conditioner",
+          "Body soap",
+          "Coffee maker",
+          "Refrigerator",
+          "Oven",
+          "Microwave",
+          "Dishwasher",
+          "Stove",
+          "Cooking basics",
+          "Dishes and silverware",
+          "Pots and pans",
+          "Fire extinguisher",
+          "Smoke detector",
+          "Carbon monoxide detector",
+          "First aid kit",
+          "Private entrance",
+          "Lockbox",
+          "Long term stays allowed",
+          "Garden or backyard",
+          "BBQ grill",
+          "Patio or balcony",
+          "Pool",
+          "Gym",
+          "Elevator",
+          "Wheelchair accessible",
+          "Pets allowed",
+          "Smoking allowed",
+          "Children friendly",
+          "Host greets you",
+          "Self check-in",
+          "Lock on bedroom door",
+          "Lake access",
+          "Waterfront",
+          "Ski-in/ski-out",
+          "Beachfront"
+        ]
+      }
+    },
+    "Bookings": {
+      "ValidValues": {
+        "BookingStatus": [
+          "Confirmed",
+          "Pending",
+          "Cancelled",
+          "Completed",
+          "NoShow"
+        ]
+      }
+    },
+    "Reviews": {
+      "ValidValues": {
+        "Rating": "1-5"
+      }
+    },
+    "Payments": {
+      "ValidValues": {
+        "PaymentMethod": [
+          "Credit Card",
+          "Debit Card",
+          "PayPal",
+          "Google Pay",
+          "Apple Pay",
+          "Bank Transfer",
+          "Cash",
+          "Venmo",
+          "Bitcoin",
+          "Ethereum",
+          "Other"
+        ],
+        "PaymentStatus": [
+          "Pending",
+          "Completed",
+          "Failed"
+        ]
+      }
+    }
+  }
+}

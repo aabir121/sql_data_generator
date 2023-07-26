@@ -1,6 +1,6 @@
 namespace SQLDataGenerator.Models;
 
-public class DataGeneratorConfiguration
+public class ServerConfiguration
 {
     public DbServerType ServerType { get; set; }
     public string ServerName { get; set; }

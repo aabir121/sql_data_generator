@@ -4,10 +4,11 @@ using SQLDataGenerator.Helpers;
 using SQLDataGenerator.Models;
 
 // Take user inputs for data generation configuration.
-var config = GetUserInput();
+var serverConfig = GetUserInputForServerConfig();
+var userConfig = GetUserInputForUserConfig();
 
 // Create the appropriate DataGenerator using the factory.
-var dataGenerator = DataGeneratorFactory.CreateDataGenerator(config);
+var dataGenerator = DataGeneratorFactory.CreateDataGenerator(serverConfig, userConfig);
 
 // Generate data for the selected database.
 dataGenerator.GenerateData();
@@ -15,9 +16,9 @@ dataGenerator.GenerateData();
 // Show a message indicating the successful completion of data generation.
 Console.WriteLine("Data generation completed successfully!");
 
-static DataGeneratorConfiguration GetUserInput()
+static ServerConfiguration GetUserInputForServerConfig()
 {
-    var config = new DataGeneratorConfiguration();
+    var config = new ServerConfiguration();
 
     Console.WriteLine("Select the database server type:");
     Console.WriteLine("1. SQL Server");
@@ -28,7 +29,7 @@ static DataGeneratorConfiguration GetUserInput()
     if (!int.TryParse(Console.ReadLine(), out var option) || !Enum.IsDefined(typeof(DbServerType), option))
     {
         Console.WriteLine("Invalid option. Please select a valid option (1, 2, or 3).");
-        return GetUserInput();
+        return GetUserInputForServerConfig();
     }
 
     config.ServerType = (DbServerType)option;
@@ -48,14 +49,28 @@ static DataGeneratorConfiguration GetUserInput()
     Console.Write("Enter the password: ");
     config.Password = Console.ReadLine() ?? string.Empty;
 
-    Console.Write("Enter the number of rows to generate in each table: ");
+    Console.Write("Enter the default number of rows to generate in each table: ");
     if (!int.TryParse(Console.ReadLine(), out var numberOfRows) || numberOfRows <= 0)
     {
         Console.WriteLine("Invalid input. Number of rows must be a positive integer.");
-        return GetUserInput();
+        return GetUserInputForServerConfig();
     }
     config.NumberOfRows = numberOfRows;
 
     return config;
+}
 
+static UserConfiguration GetUserInputForUserConfig()
+{
+    Console.Write("Enter the configuration file path: ");
+    var userConfigPath = Console.ReadLine() ?? string.Empty;
+
+    if (string.IsNullOrEmpty(userConfigPath))
+    {
+        Console.WriteLine("User configuration path is not valid");
+        return GetUserInputForUserConfig();
+    }
+
+    var parser = new ConfigurationParser();
+    return parser.ParseFromJson(userConfigPath);
 }
