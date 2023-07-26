@@ -13,6 +13,11 @@ The Data Generator Tool is a C# .NET Core console application that allows you to
 - Ensures no duplicate entries are created in the primary key column during data generation.
 - Re-enables foreign key constraints after successful data insertion.
 
+## Limitations
+- Only works with SQL Server for now
+- Assumes that there is only one primary column per table
+- Assumes primary column is of type Integer.
+
 ## Requirements
 
 - .NET Core SDK

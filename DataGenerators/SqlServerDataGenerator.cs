@@ -7,6 +7,10 @@ namespace SQLDataGenerator.DataGenerators
 {
     public class SqlServerDataGenerator : DataGenerator
     {
+        private static readonly int MAX_ALLOWED_PARAMS = 2100;
+        private static readonly int DESIRED_BATCH_SIZE = 500;
+        private static readonly Random _random = new();
+
         public SqlServerDataGenerator(DataGeneratorConfiguration config) : base(config)
         {
         }
@@ -116,16 +120,19 @@ namespace SQLDataGenerator.DataGenerators
             var primaryColumn = columns.FirstOrDefault(); // Assuming the first column is the primary key column.
 
             // Generate and insert data in batches.
-            var batchSize = 100; // Set the desired batch size.
-            var totalRows = Config.NumberOfRows;
+            var batchSize = GetAchievableBatchSize(columns.Count); // Set the desired batch size.
+            var totalRows = GetNumberOfRowsToInsert(tableName);
+            Console.WriteLine($"Starting to insert {totalRows} rows for {tableName} with batchsize {batchSize}");
+
             var batches = (totalRows + batchSize - 1) / batchSize; // Calculate the number of batches.
+            var lastRowId = GetLastIdForIntegerPrimaryColumn(connection, Config.SchemaName, tableName, primaryColumn);
+            var referenceTableValueMap = new Dictionary<string, List<object>>();
 
             for (var batchIndex = 0; batchIndex < batches; batchIndex++)
             {
                 var startIndex = batchIndex * batchSize;
                 var endIndex = Math.Min(startIndex + batchSize, totalRows);
                 Console.WriteLine($"Preparing Insert statements for {tableName} and for row number {startIndex} till {endIndex}");
-
 
                 var insertSql = new StringBuilder($"INSERT INTO {Config.SchemaName}.{tableName} ({string.Join(", ", columns)}) VALUES ");
 
@@ -154,14 +161,25 @@ namespace SQLDataGenerator.DataGenerators
                             var referencedTable = referencedColumn[..referencedColumn.IndexOf('.')];
                             var referencedTableIdColumn =
                                 referencedColumn[(referencedColumn.IndexOf('.') + 1)..];
-                            value = GenerateRandomValueForReferencingColumn(connection, Config.SchemaName, referencedTable,
-                                referencedTableIdColumn);
+                            var mapKey = $"{referencedTable}.{referencedTableIdColumn}";
+                            var possibleValues = new List<object>();
+                            if (!referenceTableValueMap.ContainsKey(mapKey))
+                            {
+                                possibleValues = GetAllPossibleValuesForReferencingColumn(connection, Config.SchemaName, referencedTable,
+                                    referencedTableIdColumn);
+                                referenceTableValueMap[mapKey] = possibleValues;
+                            } else
+                            {
+                                possibleValues = referenceTableValueMap[mapKey];
+                            }
+
+                            value = possibleValues[_random.Next(0, possibleValues.Count)];
                         }
                         else
                         {
                             if (column == primaryColumn && dataType.Equals("int"))
                             {
-                                value = (batchIndex * batchSize) + rowIndex + 1;
+                                value = ++lastRowId;
                             }
                             else
                             {
@@ -181,6 +199,36 @@ namespace SQLDataGenerator.DataGenerators
             EnableForeignKeyCheck((SqlConnection)connection);
         }
 
+        private static int GetLastIdForIntegerPrimaryColumn(IDbConnection connection, string schemaName, string tableName, string primaryColumnName)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = $"select top(1) {primaryColumnName} from {schemaName}.{tableName} ORDER BY {primaryColumnName} DESC;";
+
+            var result = command.ExecuteScalar();
+            return result == DBNull.Value ? 1 : Convert.ToInt32(result);
+        }
+        private static List<object> GetAllPossibleValuesForReferencingColumn(IDbConnection connection, string schemaName,
+            string referencedTable, string referencedIdColumn)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT TOP 100 {referencedIdColumn} FROM {schemaName}.{referencedTable} ORDER BY NEWID()";
+
+            var result = new List<object>();
+
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    var value = reader[0];
+                    if (value != DBNull.Value) // Check for possible null values
+                    {
+                        result.Add(value);
+                    }
+                }
+            }
+
+            return result;
+        }
 
 
         private static object? GenerateRandomValueForReferencingColumn(IDbConnection connection, string schemaName, string referencedTable,
@@ -211,6 +259,25 @@ namespace SQLDataGenerator.DataGenerators
                     connection);
             command.ExecuteNonQuery();
             Console.WriteLine("Foreign key check constraint enabled.");
+        }
+
+        private static int GetAchievableBatchSize(int columnLength)
+        {
+            int batchSize = DESIRED_BATCH_SIZE;
+
+            while (batchSize * columnLength >= MAX_ALLOWED_PARAMS)
+            {
+                batchSize -= 50;
+            }
+
+            return batchSize;
+        }
+
+        private int GetNumberOfRowsToInsert(string tableName)
+        {
+            var totalRows = Config.NumberOfRows;
+
+            return totalRows;
         }
     }
 }

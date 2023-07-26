@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Text.RegularExpressions;
 using Bogus;
 using Microsoft.Data.SqlClient;
 using SQLDataGenerator.Models;
@@ -80,24 +81,41 @@ namespace SQLDataGenerator.DataGenerators
 
         protected object? GenerateRandomValueForDataType(string dataType, string columnName)
         {
+            dataType = dataType.ToLower();
+
             // Use Faker to generate random data based on column type and name.
-            // You can add more data type cases as needed to handle other column types.
-            switch (dataType.ToLower())
+            switch (dataType)
             {
                 case "nvarchar":
                 case "varchar":
                 case "text":
-                    if (columnName.ToLower().Contains("name") || columnName.ToLower().Contains("fullname"))
+                    if (Regex.IsMatch(columnName, @"\b(?:name|fullname)\b", RegexOptions.IgnoreCase))
                     {
                         return _faker.Name.FullName();
                     }
-                    if (columnName.ToLower().Contains("email"))
+                    if (Regex.IsMatch(columnName, @"\b(?:email)\b", RegexOptions.IgnoreCase))
                     {
                         return _faker.Internet.Email();
                     }
-                    if (columnName.ToLower().Contains("address"))
+                    if (Regex.IsMatch(columnName, @"\b(?:address)\b", RegexOptions.IgnoreCase))
                     {
                         return _faker.Address.FullAddress();
+                    }
+                    if (Regex.IsMatch(columnName, @"\b(?:country)\b", RegexOptions.IgnoreCase))
+                    {
+                        return _faker.Address.Country();
+                    }
+                    if (Regex.IsMatch(columnName, @"\b(?:city)\b", RegexOptions.IgnoreCase))
+                    {
+                        return _faker.Address.City();
+                    }
+                    if (Regex.IsMatch(columnName, @"\b(?:zipcode)\b", RegexOptions.IgnoreCase))
+                    {
+                        return _faker.Address.ZipCode();
+                    }
+                    if (Regex.IsMatch(columnName, @"\b(?:status)\b", RegexOptions.IgnoreCase))
+                    {
+                        return GenerateRandomStatusValue();
                     }
                     return _faker.Lorem.Word();
                 case "int":
@@ -120,9 +138,20 @@ namespace SQLDataGenerator.DataGenerators
                 case "datetime2":
                     return _faker.Date.Past();
 
+                // Add more cases to handle other data types
+                // For custom data types, you might need to implement your own logic.
+
                 default:
                     return null;
             }
+        }
+
+        // Define your custom method to generate random status values
+        private string GenerateRandomStatusValue()
+        {
+            string[] statusOptions = { "Active", "Inactive", "Pending" };
+            int randomIndex = _faker.Random.Number(0, statusOptions.Length - 1);
+            return statusOptions[randomIndex];
         }
     }
 }
