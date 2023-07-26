@@ -1,4 +1,10 @@
 {
+  "ServerName": "DESKTOP-Q9ATRRG",
+  "DatabaseName": "dba_test4",
+  "SchemaName": "bnb",
+  "Username": "sa",
+  "Password": "1234",
+  "NumberOfRows": 10000,
   "Tables": {
     "Users": {
       "ValidValues": {
@@ -13,10 +19,10 @@
           "DeActivated"
         ]
       },
-      "NumberOfRows": 100000
+      "NumberOfRows": 1000
     },
     "Properties": {
-      "NumberOfRows": 30000,
+      "NumberOfRows": 3000,
       "ValidValues": {
         "MaxOccupancy": "1-16",
         "PropertyStatus": [

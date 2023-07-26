@@ -8,14 +8,12 @@ namespace SQLDataGenerator.DataGenerators
 {
     public abstract class DataGenerator
     {
-        protected readonly ServerConfiguration ServerConfig;
-        private readonly UserConfiguration _userConfig;
+        protected readonly Configuration Config;
         private readonly Faker _faker;
 
-        protected DataGenerator(ServerConfiguration serverConfig, UserConfiguration userConfig)
+        protected DataGenerator(Configuration config)
         {
-            ServerConfig = serverConfig;
-            _userConfig = userConfig;
+            Config = config;
             _faker = CreateFaker();
         }
 
@@ -58,7 +56,7 @@ namespace SQLDataGenerator.DataGenerators
 
         protected virtual Dictionary<string, TableConfiguration?> GetTableConfigs()
         {
-            return _userConfig.Tables;
+            return Config.Tables;
         }
         
         protected abstract List<string> GetTableNames(IDbConnection connection);
