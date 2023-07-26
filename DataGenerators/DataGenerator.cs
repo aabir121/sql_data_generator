@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using System.Data;
+using System.Data.Common;
 using System.Text.RegularExpressions;
 using Bogus;
 using Microsoft.Data.SqlClient;
@@ -8,14 +11,12 @@ namespace SQLDataGenerator.DataGenerators
 {
     public abstract class DataGenerator
     {
-        protected readonly ServerConfiguration ServerConfig;
-        private readonly UserConfiguration _userConfig;
+        protected readonly DataGeneratorConfiguration Config;
         private readonly Faker _faker;
 
-        protected DataGenerator(ServerConfiguration serverConfig, UserConfiguration userConfig)
+        protected DataGenerator(DataGeneratorConfiguration config)
         {
-            ServerConfig = serverConfig;
-            _userConfig = userConfig;
+            Config = config;
             _faker = CreateFaker();
         }
 
@@ -28,8 +29,6 @@ namespace SQLDataGenerator.DataGenerators
                 connection.Open();
                 Console.WriteLine("Connected to the database server.");
 
-                var tableConfigs = GetTableConfigs();
-                
                 // Retrieve all table names from the selected schema.
                 var tableNames = GetTableNames(connection);
 
@@ -40,7 +39,7 @@ namespace SQLDataGenerator.DataGenerators
                 foreach (var tableName in tableNames.Where(tableName => tableData.ContainsKey(tableName)))
                 {
                     var tableInfo = tableData[tableName];
-                    InsertDataIntoTable(connection, tableName, tableInfo, tableConfigs.TryGetValue(tableName, out var config) ? config : null);
+                    InsertDataIntoTable(connection, tableName, tableInfo.Columns, tableInfo.ColumnTypes, tableInfo.ForeignKeyRelationships);
                 }
 
                 // Show a message indicating successful data generation.
@@ -50,22 +49,16 @@ namespace SQLDataGenerator.DataGenerators
             {
                 Console.WriteLine("Error occurred during data generation:");
                 Console.WriteLine(ex.Message);
-                Console.WriteLine(ex.StackTrace);
             }
         }
 
         protected abstract IDbConnection GetDbConnection();
 
-        protected virtual Dictionary<string, TableConfiguration?> GetTableConfigs()
-        {
-            return _userConfig.Tables;
-        }
-        
         protected abstract List<string> GetTableNames(IDbConnection connection);
 
         protected abstract Dictionary<string, TableInfo> GetTableData(IDbConnection connection, List<string> tableNames);
 
-        protected abstract void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo, TableConfiguration? tableConfig);
+        protected abstract void InsertDataIntoTable(IDbConnection connection, string tableName, List<string> columns, Dictionary<string, string> columnTypes, Dictionary<string, string> foreignKeyRelationships);
 
         protected abstract void DisableForeignKeyCheck(SqlConnection connection);
 
@@ -73,7 +66,11 @@ namespace SQLDataGenerator.DataGenerators
 
         protected string GetParamPlaceholders(List<string> columns, int rowIdx)
         {
-            var placeholders = columns.Select(t => $"@{t}{rowIdx}").ToList();
+            var placeholders = new List<string>();
+            for (var i = 0; i < columns.Count; i++)
+            {
+                placeholders.Add($"@{columns[i]}{rowIdx}");
+            }
             return string.Join(", ", placeholders);
         }
 
@@ -82,14 +79,8 @@ namespace SQLDataGenerator.DataGenerators
             return new Faker();
         }
 
-        protected object? GenerateRandomValueForDataType(string dataType, string columnName,
-            List<object>? tableConfigValidValues)
+        protected object? GenerateRandomValueForDataType(string dataType, string columnName)
         {
-            if (tableConfigValidValues != null)
-            {
-                return _faker.PickRandom(tableConfigValidValues);
-            }
-            
             dataType = dataType.ToLower();
 
             // Use Faker to generate random data based on column type and name.
@@ -110,30 +101,6 @@ namespace SQLDataGenerator.DataGenerators
                     {
                         return _faker.Address.FullAddress();
                     }
-                    if (Regex.IsMatch(columnName, @"\b(?:phone)\b", RegexOptions.IgnoreCase))
-                    {
-                        return _faker.Phone.PhoneNumber();
-                    }
-                    if (Regex.IsMatch(columnName, @"\b(?:password)\b", RegexOptions.IgnoreCase))
-                    {
-                        return _faker.Internet.Password();
-                    }
-                    if (Regex.IsMatch(columnName, @"\b(?:picture)\b", RegexOptions.IgnoreCase))
-                    {
-                        return _faker.Image.LoremFlickrUrl();
-                    }
-                    if (Regex.IsMatch(columnName, @"\b(?:url)\b", RegexOptions.IgnoreCase))
-                    {
-                        return _faker.Internet.Url();
-                    }
-                    if (Regex.IsMatch(columnName, @"\b(?:price)\b", RegexOptions.IgnoreCase))
-                    {
-                        return _faker.Commerce.Price();
-                    }
-                    if (Regex.IsMatch(columnName, @"\b(?:review)\b", RegexOptions.IgnoreCase))
-                    {
-                        return _faker.Rant.Review();
-                    }
                     if (Regex.IsMatch(columnName, @"\b(?:country)\b", RegexOptions.IgnoreCase))
                     {
                         return _faker.Address.Country();
@@ -146,12 +113,11 @@ namespace SQLDataGenerator.DataGenerators
                     {
                         return _faker.Address.ZipCode();
                     }
-                    if (Regex.IsMatch(columnName, @"\b(?:message)\b", RegexOptions.IgnoreCase))
+                    if (Regex.IsMatch(columnName, @"\b(?:status)\b", RegexOptions.IgnoreCase))
                     {
-                        return _faker.Lorem.Text();
+                        return GenerateRandomStatusValue();
                     }
-
-                    return Regex.IsMatch(columnName, @"\b(?:description)\b", RegexOptions.IgnoreCase) ? _faker.Random.Words() : _faker.Lorem.Word();
+                    return _faker.Lorem.Word();
                 case "int":
                 case "bigint":
                 case "smallint":
@@ -178,6 +144,14 @@ namespace SQLDataGenerator.DataGenerators
                 default:
                     return null;
             }
+        }
+
+        // Define your custom method to generate random status values
+        private string GenerateRandomStatusValue()
+        {
+            string[] statusOptions = { "Active", "Inactive", "Pending" };
+            int randomIndex = _faker.Random.Number(0, statusOptions.Length - 1);
+            return statusOptions[randomIndex];
         }
     }
 }
