@@ -2,7 +2,7 @@ namespace SQLDataGenerator.Helpers;
 
 using System.IO;
 using Newtonsoft.Json;
-using SQLDataGenerator.Models.Config;
+using Models.Config;
 
 public class ConfigurationParser
 {

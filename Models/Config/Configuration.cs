@@ -4,6 +4,13 @@ namespace SQLDataGenerator.Models.Config;
 
 public class Configuration
 {
+    public Configuration(ServerConfiguration serverConfiguration, CommonSettings commonSettings, TableSettings tableSettings)
+    {
+        ServerConfiguration = serverConfiguration;
+        CommonSettings = commonSettings;
+        TableSettings = tableSettings;
+    }
+
     [JsonProperty("database")]
     public ServerConfiguration ServerConfiguration { get; set; }
 

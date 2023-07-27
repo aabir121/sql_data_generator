@@ -21,18 +21,39 @@ public class ValidValuesConverter : JsonConverter
             var propertyName = property.Name;
             var propertyValue = property.Value;
 
-            if (propertyValue.Type == JTokenType.String && (((string)propertyValue)!).Contains('-'))
+            switch (propertyValue.Type)
             {
-                // Parse the range if the value contains a hyphen
-                var rangeValues = ((string)propertyValue!)?.Split('-');
-                int minValue = int.Parse(rangeValues?[0] ?? string.Empty, CultureInfo.InvariantCulture);
-                int maxValue = int.Parse(rangeValues?[1] ?? string.Empty, CultureInfo.InvariantCulture);
-                validValues[propertyName] =  Enumerable.Range(minValue, maxValue - minValue + 1).Select(v => (object)v).ToList();;
-            }
-            else if (propertyValue.Type == JTokenType.Array)
-            {
-                // Directly add the array of strings to valid values
-                validValues[propertyName] = propertyValue.ToObject<List<object>>();
+                case JTokenType.String when (((string)propertyValue)!).Contains('-'):
+                {
+                    // Parse the range if the value contains a hyphen
+                    var rangeValues = ((string)propertyValue!)?.Split('-');
+                    var minValue = int.Parse(rangeValues?[0] ?? string.Empty, CultureInfo.InvariantCulture);
+                    var maxValue = int.Parse(rangeValues?[1] ?? string.Empty, CultureInfo.InvariantCulture);
+                    validValues[propertyName] =  Enumerable.Range(minValue, maxValue - minValue + 1).Select(v => (object)v).ToList();;
+                    break;
+                }
+                case JTokenType.Array:
+                    // Directly add the array of strings to valid values
+                    validValues[propertyName] = propertyValue.ToObject<List<object>>();
+                    break;
+                case JTokenType.None:
+                case JTokenType.Object:
+                case JTokenType.Constructor:
+                case JTokenType.Property:
+                case JTokenType.Comment:
+                case JTokenType.Integer:
+                case JTokenType.Float:
+                case JTokenType.Boolean:
+                case JTokenType.Null:
+                case JTokenType.Undefined:
+                case JTokenType.Date:
+                case JTokenType.Raw:
+                case JTokenType.Bytes:
+                case JTokenType.Guid:
+                case JTokenType.Uri:
+                case JTokenType.TimeSpan:
+                default:
+                    throw new ArgumentOutOfRangeException();
             }
         }
 

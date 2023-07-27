@@ -1,15 +1,17 @@
 ﻿using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using SQLDataGenerator.Helpers;
 
 namespace SQLDataGenerator.Models.Config;
 
 public class TableConfig
 {
+    public TableConfig(string name, int numberOfRows, Dictionary<string, List<object>> validValues)
+    {
+        Name = name;
+        NumberOfRows = numberOfRows;
+        ValidValues = validValues;
+    }
+
     [JsonProperty("name")]
     public string Name { get;set; }
 

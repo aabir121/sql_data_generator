@@ -294,7 +294,7 @@ namespace SQLDataGenerator.DataGenerators
         {
             if (tableSettings == null || tableSettings.NumberOfRows == 0)
             {
-                return CommonSettings.NumberofRows;
+                return CommonSettings.NumberOfRows;
             }
 
             return tableSettings.NumberOfRows;

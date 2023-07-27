@@ -5,5 +5,5 @@ namespace SQLDataGenerator.Models.Config;
 public class CommonSettings
 {
     [JsonProperty("numberOfRows")]
-    public int NumberofRows { get; set; }
+    public int NumberOfRows { get; set; }
 }

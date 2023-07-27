@@ -4,6 +4,15 @@ namespace SQLDataGenerator.Models.Config;
 
 public class ServerConfiguration
 {
+    public ServerConfiguration(string serverName, string databaseName, string schemaName, string username, string password)
+    {
+        ServerName = serverName;
+        DatabaseName = databaseName;
+        SchemaName = schemaName;
+        Username = username;
+        Password = password;
+    }
+
     [JsonProperty("serverName")]
     public string ServerName { get; set; }
 

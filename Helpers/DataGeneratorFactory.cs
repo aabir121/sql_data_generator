@@ -4,7 +4,7 @@ using SQLDataGenerator.Models.Config;
 
 namespace SQLDataGenerator.Helpers;
 
-public class DataGeneratorFactory
+public abstract class DataGeneratorFactory
 {
     public static DataGenerator CreateDataGenerator(DbServerType serverType, Configuration config)
     {
