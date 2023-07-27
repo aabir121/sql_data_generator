@@ -114,7 +114,7 @@ namespace SQLDataGenerator.DataGenerators
         }
 
         protected override void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo,
-            Config? tableConfig)
+            TableConfig? tableConfig)
         {
             // Disable foreign key constraints before inserting data.
             DisableForeignKeyCheck((SqlConnection)connection);
@@ -232,15 +232,13 @@ namespace SQLDataGenerator.DataGenerators
 
             var result = new List<object>();
 
-            using (var reader = command.ExecuteReader())
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
             {
-                while (reader.Read())
+                var value = reader[0];
+                if (value != DBNull.Value) // Check for possible null values
                 {
-                    var value = reader[0];
-                    if (value != DBNull.Value) // Check for possible null values
-                    {
-                        result.Add(value);
-                    }
+                    result.Add(value);
                 }
             }
 
@@ -292,7 +290,7 @@ namespace SQLDataGenerator.DataGenerators
             return batchSize;
         }
 
-        private int GetNumberOfRowsToInsert(Config? tableSettings)
+        private int GetNumberOfRowsToInsert(TableConfig? tableSettings)
         {
             if (tableSettings == null || tableSettings.NumberOfRows == 0)
             {

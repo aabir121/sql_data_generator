@@ -10,8 +10,8 @@ namespace SQLDataGenerator.Models.Config;
 public class TableSettings
 {
     [JsonProperty("filter")]
-    public Filter Filter { get; set; }
+    public TableFilter TableFilter { get; set; }
 
     [JsonProperty("config")]
-    public List<Config> Config { get; set; }
+    public List<TableConfig> Config { get; set; }
 }

@@ -39,7 +39,7 @@ namespace SQLDataGenerator.DataGenerators
                 // Get column information and foreign key relationships for each table.
                 var tableData = GetTableData(connection, tableNames);
 
-                var tableConfigsMap = new Dictionary<string, Config>();
+                var tableConfigsMap = new Dictionary<string, TableConfig>();
                 foreach(var c in TableSettings.Config)
                 {
                     tableConfigsMap[c.Name] = c;
@@ -66,13 +66,13 @@ namespace SQLDataGenerator.DataGenerators
 
         private List<string> FilterBasedOnSettings(List<string> tableNames)
         {
-            if (TableSettings.Filter == null)
+            if (TableSettings.TableFilter == null)
             {
                 return tableNames;
             }
 
-            var values = TableSettings.Filter.Values;
-            if (TableSettings.Filter.FilterMode == FilterMode.Include)
+            var values = TableSettings.TableFilter.Values;
+            if (TableSettings.TableFilter.FilterMode == FilterMode.Include)
             {
                 return tableNames.Where((x) => values.Contains(x)).ToList();
             }
@@ -88,7 +88,7 @@ namespace SQLDataGenerator.DataGenerators
 
         protected abstract Dictionary<string, TableInfo> GetTableData(IDbConnection connection, List<string> tableNames);
 
-        protected abstract void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo, Config? tableConfig);
+        protected abstract void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo, TableConfig? tableConfig);
 
         protected abstract void DisableForeignKeyCheck(SqlConnection connection);
 

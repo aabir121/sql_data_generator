@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace SQLDataGenerator.Models.Config;
 
-public class Filter
+public class TableFilter
 {
     [JsonProperty("mode")]
     public FilterMode FilterMode { get; set; }
