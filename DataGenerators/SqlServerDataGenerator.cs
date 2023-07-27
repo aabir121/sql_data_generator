@@ -2,6 +2,7 @@ using System.Data;
 using System.Text;
 using Microsoft.Data.SqlClient;
 using SQLDataGenerator.Models;
+using SQLDataGenerator.Models.Config;
 
 namespace SQLDataGenerator.DataGenerators
 {
@@ -20,8 +21,8 @@ namespace SQLDataGenerator.DataGenerators
         {
             // Create and return a SqlConnection for SQL Server.
             return new SqlConnection(
-                $"Data Source={Config.ServerName};Initial Catalog={Config.DatabaseName};User ID={Config.Username};" +
-                $"Password={Config.Password};TrustServerCertificate=True;");
+                $"Data Source={ServerConfig.ServerName};Initial Catalog={ServerConfig.DatabaseName};User ID={ServerConfig.Username};" +
+                $"Password={ServerConfig.Password};TrustServerCertificate=True;");
         }
 
         protected override List<string> GetTableNames(IDbConnection connection)
@@ -29,7 +30,7 @@ namespace SQLDataGenerator.DataGenerators
             var tableNames = new List<string>();
             using var command = connection.CreateCommand();
             command.CommandText = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @SchemaName";
-            command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar) { Value = Config.SchemaName });
+            command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar) { Value = ServerConfig.SchemaName });
 
             using var reader = command.ExecuteReader();
             while (reader.Read())
@@ -55,7 +56,7 @@ namespace SQLDataGenerator.DataGenerators
                     command.CommandText =
                         "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @SchemaName AND TABLE_NAME = @TableName";
                     command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar)
-                        { Value = Config.SchemaName });
+                        { Value = ServerConfig.SchemaName });
                     command.Parameters.Add(new SqlParameter("@TableName", SqlDbType.NVarChar) { Value = tableName });
 
                     using (var reader = command.ExecuteReader())
@@ -113,7 +114,7 @@ namespace SQLDataGenerator.DataGenerators
         }
 
         protected override void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo,
-            TableConfiguration? tableConfig)
+            Config? tableConfig)
         {
             // Disable foreign key constraints before inserting data.
             DisableForeignKeyCheck((SqlConnection)connection);
@@ -123,11 +124,11 @@ namespace SQLDataGenerator.DataGenerators
 
             // Generate and insert data in batches.
             var batchSize = GetAchievableBatchSize(tableInfo.Columns.Count); // Set the desired batch size.
-            var totalRows = GetNumberOfRowsToInsert(tableName, tableConfig);
+            var totalRows = GetNumberOfRowsToInsert(tableConfig);
             Console.WriteLine($"Starting to insert {totalRows} rows for {tableName} with batch size {batchSize}");
 
             var batches = (totalRows + batchSize - 1) / batchSize; // Calculate the number of batches.
-            var lastRowId = GetLastIdForIntegerPrimaryColumn(connection, Config.SchemaName, tableName, primaryColumn);
+            var lastRowId = GetLastIdForIntegerPrimaryColumn(connection, ServerConfig.SchemaName, tableName, primaryColumn);
             var referenceTableValueMap = new Dictionary<string, List<object>>();
 
             for (var batchIndex = 0; batchIndex < batches; batchIndex++)
@@ -139,7 +140,7 @@ namespace SQLDataGenerator.DataGenerators
 
                 var insertSql =
                     new StringBuilder(
-                        $"INSERT INTO {Config.SchemaName}.{tableName} ({string.Join(", ", tableInfo.Columns)}) VALUES ");
+                        $"INSERT INTO {ServerConfig.SchemaName}.{tableName} ({string.Join(", ", tableInfo.Columns)}) VALUES ");
 
                 for (var i = startIndex; i < endIndex; i++)
                 {
@@ -169,7 +170,7 @@ namespace SQLDataGenerator.DataGenerators
                             List<object> possibleValues;
                             if (!referenceTableValueMap.ContainsKey(mapKey))
                             {
-                                possibleValues = GetAllPossibleValuesForReferencingColumn(connection, Config.SchemaName,
+                                possibleValues = GetAllPossibleValuesForReferencingColumn(connection, ServerConfig.SchemaName,
                                     referencedTable,
                                     referencedTableIdColumn);
                                 referenceTableValueMap[mapKey] = possibleValues;
@@ -291,14 +292,14 @@ namespace SQLDataGenerator.DataGenerators
             return batchSize;
         }
 
-        private int GetNumberOfRowsToInsert(string tableName, TableConfiguration? tableConfig)
+        private int GetNumberOfRowsToInsert(Config? tableSettings)
         {
-            if (tableConfig == null || tableConfig.NumberOfRows == 0)
+            if (tableSettings == null || tableSettings.NumberOfRows == 0)
             {
-                return Config.NumberOfRows;
+                return CommonSettings.NumberofRows;
             }
 
-            return tableConfig.NumberOfRows;
+            return tableSettings.NumberOfRows;
         }
     }
 }

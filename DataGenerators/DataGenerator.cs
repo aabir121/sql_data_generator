@@ -3,18 +3,25 @@ using System.Text.RegularExpressions;
 using Bogus;
 using Microsoft.Data.SqlClient;
 using SQLDataGenerator.Models;
+using SQLDataGenerator.Models.Config;
 
 namespace SQLDataGenerator.DataGenerators
 {
     public abstract class DataGenerator
     {
-        protected readonly Configuration Config;
+        protected readonly ServerConfiguration ServerConfig;
+        protected readonly CommonSettings CommonSettings;
+        protected readonly TableSettings TableSettings;
+
         private readonly Faker _faker;
 
         protected DataGenerator(Configuration config)
         {
-            Config = config;
-            _faker = CreateFaker();
+            ServerConfig = config.ServerConfiguration;
+            CommonSettings = config.CommonSettings;
+            TableSettings = config.TableSettings;
+
+            _faker = new Faker();
         }
 
         public void GenerateData()
@@ -26,19 +33,24 @@ namespace SQLDataGenerator.DataGenerators
                 connection.Open();
                 Console.WriteLine("Connected to the database server.");
 
-                var tableConfigs = GetTableConfigs();
-                
                 // Retrieve all table names from the selected schema.
                 var tableNames = GetTableNames(connection);
 
                 // Get column information and foreign key relationships for each table.
                 var tableData = GetTableData(connection, tableNames);
 
+                var tableConfigsMap = new Dictionary<string, Config>();
+                foreach(var c in TableSettings.Config)
+                {
+                    tableConfigsMap[c.Name] = c;
+                }
+
                 // Generate and insert data into each table.
-                foreach (var tableName in tableNames.Where(tableName => tableData.ContainsKey(tableName)))
+                var tableNamesToWorkWith = FilterBasedOnSettings(tableNames);
+                foreach (var tableName in tableNamesToWorkWith)
                 {
                     var tableInfo = tableData[tableName];
-                    InsertDataIntoTable(connection, tableName, tableInfo, tableConfigs.TryGetValue(tableName, out var config) ? config : null);
+                    InsertDataIntoTable(connection, tableName, tableInfo, tableConfigsMap.TryGetValue(tableName, out var config) ? config : null);
                 }
 
                 // Show a message indicating successful data generation.
@@ -52,18 +64,31 @@ namespace SQLDataGenerator.DataGenerators
             }
         }
 
+        private List<string> FilterBasedOnSettings(List<string> tableNames)
+        {
+            if (TableSettings.Filter == null)
+            {
+                return tableNames;
+            }
+
+            var values = TableSettings.Filter.Values;
+            if (TableSettings.Filter.FilterMode == FilterMode.Include)
+            {
+                return tableNames.Where((x) => values.Contains(x)).ToList();
+            }
+            else
+            {
+                return tableNames.Where((x) => !values.Contains(x)).ToList();
+            }
+        }
+
         protected abstract IDbConnection GetDbConnection();
 
-        protected virtual Dictionary<string, TableConfiguration?> GetTableConfigs()
-        {
-            return Config.Tables;
-        }
-        
         protected abstract List<string> GetTableNames(IDbConnection connection);
 
         protected abstract Dictionary<string, TableInfo> GetTableData(IDbConnection connection, List<string> tableNames);
 
-        protected abstract void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo, TableConfiguration? tableConfig);
+        protected abstract void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo, Config? tableConfig);
 
         protected abstract void DisableForeignKeyCheck(SqlConnection connection);
 
@@ -75,11 +100,6 @@ namespace SQLDataGenerator.DataGenerators
             return string.Join(", ", placeholders);
         }
 
-        private static Faker CreateFaker()
-        {
-            return new Faker();
-        }
-
         protected object? GenerateRandomValueForDataType(string dataType, string columnName,
             List<object>? tableConfigValidValues)
         {
@@ -87,7 +107,7 @@ namespace SQLDataGenerator.DataGenerators
             {
                 return _faker.PickRandom(tableConfigValidValues);
             }
-            
+
             dataType = dataType.ToLower();
 
             // Use Faker to generate random data based on column type and name.

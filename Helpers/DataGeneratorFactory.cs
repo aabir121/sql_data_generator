@@ -1,5 +1,6 @@
 using SQLDataGenerator.DataGenerators;
 using SQLDataGenerator.Models;
+using SQLDataGenerator.Models.Config;
 
 namespace SQLDataGenerator.Helpers;
 

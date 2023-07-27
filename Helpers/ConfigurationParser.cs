@@ -1,9 +1,8 @@
-using SQLDataGenerator.Models;
-
 namespace SQLDataGenerator.Helpers;
 
 using System.IO;
 using Newtonsoft.Json;
+using SQLDataGenerator.Models.Config;
 
 public class ConfigurationParser
 {

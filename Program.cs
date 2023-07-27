@@ -1,6 +1,7 @@
 ﻿using SQLDataGenerator.DataGenerators;
 using SQLDataGenerator.Helpers;
 using SQLDataGenerator.Models;
+using SQLDataGenerator.Models.Config;
 
 // Take user inputs for data generation configuration.
 var serverType = GetServerTypeFromUser();

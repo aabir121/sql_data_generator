@@ -1,12 +1,21 @@
-namespace SQLDataGenerator.Models;
+using Newtonsoft.Json;
+
+namespace SQLDataGenerator.Models.Config;
 
 public class ServerConfiguration
 {
-    public DbServerType ServerType { get; set; }
+    [JsonProperty("serverName")]
     public string ServerName { get; set; }
+
+    [JsonProperty("databaseName")]
     public string DatabaseName { get; set; }
+
+    [JsonProperty("schemaName")]
     public string SchemaName { get; set; }
+
+    [JsonProperty("username")]
     public string Username { get; set; }
+
+    [JsonProperty("password")]
     public string Password { get; set; }
-    public int NumberOfRows { get; set; }
 }
