@@ -1,10 +1,10 @@
 {
   "database": {
-    "serverName": "AABIRLAP",
-    "databaseName": "dba_test4",
-    "schemaName": "bnb",
-    "username": "sa",
-    "password": "Enosis123"
+    "serverName": "SAMPLE_SERVER_NAME",
+    "databaseName": "SAMPLE_DATABASE_NAME",
+    "schemaName": "SAMPLE_SCHEMA_NAME",
+    "username": "SAMPLE_USERNAME",
+    "password": "SAMPLE_PASSWORD"
   },
   "commonSettings": {
     "numberOfRows": 10000
@@ -12,53 +12,23 @@
   "tableSettings": {
     "filter": {
       "mode": "Include",
-      "values": [ "Users" ]
+      "values": ["Users", "Products"]
     },
     "config": [
       {
         "name": "Users",
         "numberOfRows": 1000,
         "validValues": {
-          "VerificationStatus": [ "Verified", "Pending", "UnVerified" ],
-          "AccountStatus": [ "Active", "Suspended", "DeActivated" ]
+          "Status": ["Active", "Inactive"],
+          "Gender": ["Male", "Female", "Other"]
         }
       },
       {
-        "name": "Properties",
-        "numberOfRows": 3000,
+        "name": "Products",
+        "numberOfRows": 500,
         "validValues": {
-          "MaxOccupancy": "1-16",
-          "PropertyStatus": [ "Available", "Reserved", "Under-Maintenance" ],
-          "PropertyType": [ "Apartment", "House", "Condominium", "Villa", "Cottage", "Bungalow", "Guesthouse", "Townhouse", "Loft", "Cabin", "Chalet", "Bed and Breakfast", "Farm stay", "Boat", "Tiny House", "Treehouse", "Campsite", "Tent", "Yurt", "Igloo", "Castle", "Dome House", "Earth House", "Bus", "RV", "Camper/RV", "Caravan", "Hut", "Minsu (Taiwan)", "Ryokan (Japan)", "Other" ]
-        }
-      },
-      {
-        "name": "Amenities",
-        "numberOfRows": 20,
-        "validValues": {
-          "AmenityName": [ "Wifi", "Air conditioning", "Heating", "Kitchen", "Free parking on premises", "Washer", "Dryer", "Essentials", "Towels", "Bed linens", "Hangers", "Iron", "Hair dryer", "Laptop-friendly workspace", "TV", "Cable TV", "Hot water", "Shampoo", "Conditioner", "Body soap", "Coffee maker", "Refrigerator", "Oven", "Microwave", "Dishwasher", "Stove", "Cooking basics", "Dishes and silverware", "Pots and pans", "Fire extinguisher", "Smoke detector", "Carbon monoxide detector", "First aid kit", "Private entrance", "Lockbox", "Long term stays allowed", "Garden or backyard", "BBQ grill", "Patio or balcony", "Pool", "Gym", "Elevator", "Wheelchair accessible", "Pets allowed", "Smoking allowed", "Children friendly", "Host greets you", "Self check-in", "Lock on bedroom door", "Lake access", "Waterfront", "Ski-in/ski-out", "Beachfront" ]
-        }
-      },
-      {
-        "name": "Bookings",
-        "numberOfRows": 5,
-        "validValues": {
-          "BookingStatus": [ "Confirmed", "Pending", "Cancelled", "Completed", "NoShow" ]
-        }
-      },
-      {
-        "name": "Reviews",
-        "numberOfRows": 50,
-        "validValues": {
-          "Rating": "1-5"
-        }
-      },
-      {
-        "name": "Payments",
-        "numberOfRows": 2,
-        "validValues": {
-          "PaymentMethod": [ "Credit Card", "Debit Card", "PayPal", "Google Pay", "Apple Pay", "Bank Transfer", "Cash", "Venmo", "Bitcoin", "Ethereum", "Other" ],
-          "PaymentStatus": [ "Pending", "Completed", "Failed" ]
+          "Category": ["Electronics", "Clothing", "Home", "Books"],
+          "Quantity": "1-10"
         }
       }
     ]
