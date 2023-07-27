@@ -1,0 +1,36 @@
+{
+  "database": {
+    "serverName": "SAMPLE_SERVER_NAME",
+    "databaseName": "SAMPLE_DATABASE_NAME",
+    "schemaName": "SAMPLE_SCHEMA_NAME",
+    "username": "SAMPLE_USERNAME",
+    "password": "SAMPLE_PASSWORD"
+  },
+  "commonSettings": {
+    "numberOfRows": 10000
+  },
+  "tableSettings": {
+    "filter": {
+      "mode": "Include",
+      "values": ["Users", "Products"]
+    },
+    "config": [
+      {
+        "name": "Users",
+        "numberOfRows": 1000,
+        "validValues": {
+          "Status": ["Active", "Inactive"],
+          "Gender": ["Male", "Female", "Other"]
+        }
+      },
+      {
+        "name": "Products",
+        "numberOfRows": 500,
+        "validValues": {
+          "Category": ["Electronics", "Clothing", "Home", "Books"],
+          "Quantity": "1-10"
+        }
+      }
+    ]
+  }
+}

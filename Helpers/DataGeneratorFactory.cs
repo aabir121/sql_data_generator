@@ -1,13 +1,14 @@
 using SQLDataGenerator.DataGenerators;
 using SQLDataGenerator.Models;
+using SQLDataGenerator.Models.Config;
 
 namespace SQLDataGenerator.Helpers;
 
-public class DataGeneratorFactory
+public abstract class DataGeneratorFactory
 {
-    public static DataGenerator CreateDataGenerator(DataGeneratorConfiguration config)
+    public static DataGenerator CreateDataGenerator(DbServerType serverType, Configuration config)
     {
-        return config.ServerType switch
+        return serverType switch
         {
             DbServerType.SqlServer => new SqlServerDataGenerator(config),
             DbServerType.MySql => throw new NotSupportedException("MySQL is not supported yet."),
