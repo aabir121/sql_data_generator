@@ -88,9 +88,9 @@ namespace SQLDataGenerator.DataGenerators
         protected abstract void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo,
             TableConfig? tableConfig);
 
-        protected abstract void DisableForeignKeyCheck(SqlConnection connection);
+        protected abstract void DisableForeignKeyCheck(IDbConnection connection);
 
-        protected abstract void EnableForeignKeyCheck(SqlConnection connection);
+        protected abstract void EnableForeignKeyCheck(IDbConnection connection);
 
         protected static string GetParamPlaceholders(IEnumerable<string> columns, int rowIdx)
         {
@@ -98,7 +98,9 @@ namespace SQLDataGenerator.DataGenerators
             return string.Join(", ", placeholders);
         }
 
-        protected object? GenerateRandomValueForDataType(string dataType, string columnName,
+        protected abstract object? GenerateRandomValueBasedOnDataType(string dataType, string columnName);
+        
+        protected object? GenerateRandomValue(string dataType, string columnName,
             List<object>? tableConfigValidValues)
         {
             if (tableConfigValidValues != null)
@@ -106,44 +108,30 @@ namespace SQLDataGenerator.DataGenerators
                 return _faker.PickRandom(tableConfigValidValues);
             }
 
-            dataType = dataType.ToLower();
-
-            switch (dataType)
-            {
-                case "nvarchar":
-                case "varchar":
-                case "text":
-                    return GenerateTextValue(columnName);
-
-                case "int":
-                case "bigint":
-                case "smallint":
-                case "tinyint":
-                    return _faker.Random.Number(1, 100);
-
-                case "float":
-                case "real":
-                case "decimal":
-                case "numeric":
-                    return _faker.Random.Decimal(1, 100);
-
-                case "bit":
-                    return _faker.Random.Bool();
-
-                case "date":
-                case "datetime":
-                case "datetime2":
-                    return _faker.Date.Past();
-
-                // Add more cases to handle other data types
-                // For custom data types, you might need to implement your own logic.
-
-                default:
-                    return null;
-            }
+            return GenerateRandomValueBasedOnDataType(dataType, columnName);
         }
 
-        private object GenerateTextValue(string columnName)
+        protected int GetRandomInt()
+        {
+            return _faker.Random.Number(1, 100);
+        }
+
+        protected decimal GetRandomDecimal()
+        {
+            return _faker.Random.Decimal(1, 100);
+        }
+
+        protected bool GetRandomBool()
+        {
+            return _faker.Random.Bool();
+        }
+
+        protected DateTime GetRandomDate()
+        {
+            return _faker.Date.Past();
+        }
+        
+        protected string GenerateTextValue(string columnName)
         {
             if (Regex.IsMatch(columnName, @"\b(?:name|fullname)\b", RegexOptions.IgnoreCase))
             {

@@ -15,6 +15,9 @@ public class ServerConfiguration
 
     [JsonProperty("serverName")]
     public string ServerName { get; set; }
+    
+    [JsonProperty("port")]
+    public int Port { get; set; }
 
     [JsonProperty("databaseName")]
     public string DatabaseName { get; set; }

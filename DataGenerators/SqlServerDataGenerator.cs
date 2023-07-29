@@ -190,7 +190,7 @@ namespace SQLDataGenerator.DataGenerators
                             }
                             else
                             {
-                                value = GenerateRandomValueForDataType(dataType, column,
+                                value = GenerateRandomValue(dataType, column,
                                     tableConfig != null &&
                                     tableConfig.ValidValues.TryGetValue(column, out var validVals)
                                         ? validVals
@@ -261,21 +261,52 @@ namespace SQLDataGenerator.DataGenerators
         }
 
 
-        protected override void DisableForeignKeyCheck(SqlConnection connection)
+        protected override void DisableForeignKeyCheck(IDbConnection connection)
         {
-            using var command =
-                new SqlCommand("EXEC sp_MSforeachtable @command1='ALTER TABLE ? NOCHECK CONSTRAINT ALL'", connection);
+            using var command = connection.CreateCommand();
+            command.CommandText = "EXEC sp_MSforeachtable @command1='ALTER TABLE ? NOCHECK CONSTRAINT ALL'";
             command.ExecuteNonQuery();
             Console.WriteLine("Foreign key check constraint disabled.");
         }
 
-        protected override void EnableForeignKeyCheck(SqlConnection connection)
+        protected override void EnableForeignKeyCheck(IDbConnection connection)
         {
-            using var command =
-                new SqlCommand("EXEC sp_MSforeachtable @command1='ALTER TABLE ? WITH CHECK CHECK CONSTRAINT ALL'",
-                    connection);
+            using var command = connection.CreateCommand();
+            command.CommandText = "EXEC sp_MSforeachtable @command1='ALTER TABLE ? WITH CHECK CHECK CONSTRAINT ALL'";
             command.ExecuteNonQuery();
             Console.WriteLine("Foreign key check constraint enabled.");
+        }
+
+        protected override object? GenerateRandomValueBasedOnDataType(string dataType, string columnName)
+        {
+            dataType = dataType.ToLower();
+
+            switch (dataType)
+            {
+                case "nvarchar":
+                case "varchar":
+                case "text":
+                    return GenerateTextValue(columnName);
+
+                case "int":
+                case "bigint":
+                case "smallint":
+                case "tinyint":
+                    return GetRandomInt();
+                case "float":
+                case "real":
+                case "decimal":
+                case "numeric":
+                    return GetRandomDecimal();
+                case "bit":
+                    return GetRandomBool();
+                case "date":
+                case "datetime":
+                case "datetime2":
+                    return GetRandomDate();
+                default:
+                    return null;
+            }
         }
 
         private static int GetAchievableBatchSize(int columnLength)

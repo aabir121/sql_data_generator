@@ -12,7 +12,7 @@ public abstract class DataGeneratorFactory
         {
             DbServerType.SqlServer => new SqlServerDataGenerator(config),
             DbServerType.MySql => throw new NotSupportedException("MySQL is not supported yet."),
-            DbServerType.PostgreSql => throw new NotSupportedException("PostgreSQL is not supported yet."),
+            DbServerType.PostgreSql => new PostgreSqlDataGenerator(config),
             _ => throw new NotSupportedException("Invalid database server type.")
         };
     }
