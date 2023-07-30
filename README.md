@@ -14,7 +14,7 @@ The Data Generator Tool is a C# .NET Core console application that allows you to
 - Re-enables foreign key constraints after successful data insertion.
 
 ## Limitations
-- Only works with SQL Server for now
+- Only works with SQL Server and PostgreSql for now
 - Assumes that there is only one primary column per table
 - Assumes the primary column is of type Integer.
 
