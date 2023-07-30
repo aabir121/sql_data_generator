@@ -8,13 +8,13 @@ namespace SQLDataGenerator.DataGenerators
     public abstract class DataGenerator
     {
         protected readonly ServerConfiguration ServerConfig;
-        protected Dictionary<string, int> RowsInsertedMap;
+        protected readonly Dictionary<string, int> RowsInsertedMap;
         private readonly CommonSettings _commonSettings;
         private readonly TableSettings _tableSettings;
 
         private const int MaxAllowedParams = 2100;
         private const int DesiredBatchSize = 500;
-        private DateTime _startTime;
+        protected DateTime StartTime;
 
         protected DataGenerator(Configuration config)
         {
@@ -28,7 +28,7 @@ namespace SQLDataGenerator.DataGenerators
         {
             try
             {
-                _startTime = DateTime.Now;
+                StartTime = DateTime.Now;
                 using var connection = GetDbConnection();
                 connection.Open();
                 Console.WriteLine("Connected to the database server.");
@@ -50,11 +50,36 @@ namespace SQLDataGenerator.DataGenerators
                 Console.WriteLine(ex.StackTrace);
             }
         }
+
+        protected void ReportProgress(int batchSize, int batches, int batchIndex, int totalRows)
+        {
+            Console.SetCursorPosition(0, Console.CursorTop); // Move the cursor to the start of the line.
+            var progress = (float)(batchIndex + 1) / batches * 100;
+            var remainingRows = Math.Max(0, totalRows - (batchIndex + 1) * batchSize);
+            var eta = CalculateEta(StartTime, batchIndex, batches);
+            
+            const int progressBarWidth = 30; // Width of the progress bar (adjust as needed)
+            var progressValue = (int)(progress / 100 * progressBarWidth);
+            var progressBar = new string('#', progressValue).PadRight(progressBarWidth, '-');
+            
+            Console.Write($"Progress: [{progressBar}] {progress:F2}% | ETA: {FormatTimeSpan(eta)} | Remaining Rows: {remainingRows}/{totalRows}");
+        }
+        
+        private static TimeSpan CalculateEta(DateTime startTime, int batchIndex, int totalBatches)
+        {
+            var elapsedTime = DateTime.Now - startTime;
+            var batchesRemaining = totalBatches - batchIndex - 1;
+            var averageBatchTime = elapsedTime / (batchIndex + 1);
+            return averageBatchTime * batchesRemaining;
+        }
         
         private void DisplayStats()
         {
             var endTime = DateTime.Now;
-            var totalTimeTaken = endTime - _startTime;
+            var totalTimeTaken = endTime - StartTime;
+
+            Console.WriteLine();
+            Console.WriteLine();
 
             Console.WriteLine("----- Data Generation Statistics -----");
             Console.WriteLine($"Total Time Taken: {FormatTimeSpan(totalTimeTaken)}");
@@ -64,7 +89,7 @@ namespace SQLDataGenerator.DataGenerators
             }
             Console.WriteLine("--------------------------------------");
         }
-        
+
         private static string FormatTimeSpan(TimeSpan timeSpan)
         {
             // Format the TimeSpan to a user-readable format.
@@ -76,14 +101,14 @@ namespace SQLDataGenerator.DataGenerators
             var tableConfigsMap = new Dictionary<string, TableConfig>();
             foreach (var config in _tableSettings.Config)
             {
-                tableConfigsMap[config.Name] = config;
+                tableConfigsMap[config.Name.ToLower()] = config;
             }
 
             return tableConfigsMap;
         }
 
         private void GenerateAndInsertData(IDbConnection connection, List<string> tableNames,
-            Dictionary<string, TableInfo> tableData, Dictionary<string, TableConfig> tableConfigsMap)
+            IReadOnlyDictionary<string, TableInfo> tableData, IReadOnlyDictionary<string, TableConfig> tableConfigsMap)
         {
             var tableNamesToWorkWith = FilterBasedOnSettings(tableNames);
             var totalTables = tableNamesToWorkWith.Count;
@@ -93,13 +118,15 @@ namespace SQLDataGenerator.DataGenerators
             {
                 currentTable++;
                 var tableInfo = tableData[tableName];
-                var tableConfig = tableConfigsMap.TryGetValue(tableName, out var config) ? config : null;
+                var tableConfig = tableConfigsMap.TryGetValue(tableName.ToLower(), out var config) ? config : null;
 
+                Console.WriteLine("--------------------------------------");
                 Console.WriteLine($"Generating data for Table {currentTable}/{totalTables}: {tableName}");
 
                 InsertDataIntoTable(connection, tableName, tableInfo, tableConfig);
 
                 Console.WriteLine($"Data generation for Table {currentTable}/{totalTables}: {tableName} completed.");
+                Console.WriteLine("--------------------------------------");
             }
         }
 

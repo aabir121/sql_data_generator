@@ -116,13 +116,12 @@ namespace SQLDataGenerator.DataGenerators
                 // Disable foreign key constraints before inserting data.
                 DisableForeignKeyCheck(connection);
 
-                var rowsInserted = 0;
                 var primaryColumn = tableInfo.Columns[0]; // Assuming the first column is the primary key column.
 
                 // Generate and insert data in batches.
                 var batchSize = GetAchievableBatchSize(tableInfo.Columns.Count); // Set the desired batch size.
                 var totalRows = GetNumberOfRowsToInsert(tableConfig);
-                Console.WriteLine($"Starting to insert {totalRows} rows for {tableName} with batch size {batchSize}");
+                // Console.WriteLine($"Starting to insert {totalRows} rows for {tableName} with batch size {batchSize}");
 
                 var batches = (totalRows + batchSize - 1) / batchSize; // Calculate the number of batches.
                 var lastRowId = GetLastIdForIntegerPrimaryColumn(connection, ServerConfig.SchemaName, tableName, primaryColumn);
@@ -132,8 +131,8 @@ namespace SQLDataGenerator.DataGenerators
                 {
                     var startIndex = batchIndex * batchSize;
                     var endIndex = Math.Min(startIndex + batchSize, totalRows);
-                    Console.WriteLine(
-                        $"Preparing Insert statements for {tableName} and for row number {startIndex} till {endIndex}");
+                    // Console.WriteLine(
+                    //     $"Preparing Insert statements for {tableName} and for row number {startIndex} till {endIndex}");
 
                     var insertSql =
                         new StringBuilder(
@@ -200,17 +199,17 @@ namespace SQLDataGenerator.DataGenerators
                         }
                     }
 
-                    Console.WriteLine(
-                        $"Inserting batch data for {tableName} and for row number {startIndex} till {endIndex}");
+                    ReportProgress(batchSize, batches, batchIndex, totalRows);
+
                     command.ExecuteNonQuery();
-                    
-                    rowsInserted += (endIndex - startIndex + 1);
                 }
+                
+                Console.WriteLine();
 
                 // Re-enable foreign key constraints after data insertion.
                 EnableForeignKeyCheck((NpgsqlConnection)connection);
 
-                RowsInsertedMap[tableName] = rowsInserted;
+                RowsInsertedMap[tableName] = totalRows;
             }
             catch (Exception ex)
             {

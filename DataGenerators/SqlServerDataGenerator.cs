@@ -101,7 +101,6 @@ namespace SQLDataGenerator.DataGenerators
         {
             try
             {
-                var rowsInserted = 0;
                 // Disable foreign key constraints before inserting data.
                 DisableForeignKeyCheck((SqlConnection)connection);
 
@@ -121,8 +120,8 @@ namespace SQLDataGenerator.DataGenerators
                 {
                     var startIndex = batchIndex * batchSize;
                     var endIndex = Math.Min(startIndex + batchSize, totalRows);
-                    Console.WriteLine(
-                        $"Preparing Insert statements for {tableName} and for row number {startIndex} till {endIndex}");
+                    // Console.WriteLine(
+                        // $"Preparing Insert statements for {tableName} and for row number {startIndex} till {endIndex}");
 
                     var insertSql =
                         new StringBuilder(
@@ -189,18 +188,17 @@ namespace SQLDataGenerator.DataGenerators
                             command.Parameters.AddWithValue($"@{column}{rowIndex}", value);
                         }
                     }
-
-                    Console.WriteLine(
-                        $"Inserting batch data for {tableName} and for row number {startIndex} till {endIndex}");
+                    
+                    ReportProgress(batchSize, batches, batchIndex, totalRows);
                     command.ExecuteNonQuery();
-
-                    rowsInserted += (endIndex - startIndex + 1);
                 }
+                
+                Console.WriteLine();
 
                 // Re-enable foreign key constraints after data insertion.
                 EnableForeignKeyCheck((SqlConnection)connection);
 
-                RowsInsertedMap[tableName] = rowsInserted;
+                RowsInsertedMap[tableName] = totalRows;
             }
             catch (Exception ex)
             {
