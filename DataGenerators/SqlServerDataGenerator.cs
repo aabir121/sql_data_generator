@@ -1,6 +1,8 @@
 using System.Data;
 using System.Text;
 using Microsoft.Data.SqlClient;
+using SQLDataGenerator.Constants;
+using SQLDataGenerator.Helpers;
 using SQLDataGenerator.Models;
 using SQLDataGenerator.Models.Config;
 
@@ -29,8 +31,9 @@ namespace SQLDataGenerator.DataGenerators
         {
             var tableNames = new List<string>();
             using var command = connection.CreateCommand();
-            command.CommandText = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @SchemaName";
-            command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar) { Value = ServerConfig.SchemaName });
+            command.CommandText = SqlServerConstants.GetTableNamesQuery;
+            command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar)
+                { Value = ServerConfig.SchemaName });
 
             using var reader = command.ExecuteReader();
             while (reader.Read())
@@ -53,8 +56,7 @@ namespace SQLDataGenerator.DataGenerators
                 // Retrieve column names and data types for the current table.
                 using (var command = connection.CreateCommand())
                 {
-                    command.CommandText =
-                        "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @SchemaName AND TABLE_NAME = @TableName";
+                    command.CommandText = SqlServerConstants.GetTableColumnsQuery;
                     command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar)
                         { Value = ServerConfig.SchemaName });
                     command.Parameters.Add(new SqlParameter("@TableName", SqlDbType.NVarChar) { Value = tableName });
@@ -74,28 +76,13 @@ namespace SQLDataGenerator.DataGenerators
                 // Retrieve foreign key relationships for the current table.
                 using (var command = connection.CreateCommand())
                 {
-                    command.CommandText = @"
-                SELECT
-                    fk.name AS ForeignKeyName,
-                    OBJECT_NAME(fk.parent_object_id) AS TableName,
-                    cpa.name AS ColumnName,
-                    OBJECT_NAME(fk.referenced_object_id) AS ReferencedTableName,
-                    cref.name AS ReferencedColumnName
-                FROM
-                    sys.foreign_keys fk
-                    INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-                    INNER JOIN sys.columns cpa ON fkc.parent_object_id = cpa.object_id AND fkc.parent_column_id = cpa.column_id
-                    INNER JOIN sys.columns cref ON fkc.referenced_object_id = cref.object_id AND fkc.referenced_column_id = cref.column_id
-                WHERE
-                    OBJECT_NAME(fk.parent_object_id) = @TableName";
-
+                    command.CommandText = SqlServerConstants.GetForeignKeyRelationshipsQuery;
                     command.Parameters.Add(new SqlParameter("@TableName", SqlDbType.NVarChar) { Value = tableName });
 
                     using (var reader = command.ExecuteReader())
                     {
                         while (reader.Read())
                         {
-                            var foreignKeyName = reader.GetString(0);
                             var columnName = reader.GetString(2);
                             var referencedTableName = reader.GetString(3);
                             var referencedColumnName = reader.GetString(4);
@@ -128,7 +115,8 @@ namespace SQLDataGenerator.DataGenerators
             Console.WriteLine($"Starting to insert {totalRows} rows for {tableName} with batch size {batchSize}");
 
             var batches = (totalRows + batchSize - 1) / batchSize; // Calculate the number of batches.
-            var lastRowId = GetLastIdForIntegerPrimaryColumn(connection, ServerConfig.SchemaName, tableName, primaryColumn);
+            var lastRowId =
+                GetLastIdForIntegerPrimaryColumn(connection, ServerConfig.SchemaName, tableName, primaryColumn);
             var referenceTableValueMap = new Dictionary<string, List<object>>();
 
             for (var batchIndex = 0; batchIndex < batches; batchIndex++)
@@ -170,7 +158,8 @@ namespace SQLDataGenerator.DataGenerators
                             List<object> possibleValues;
                             if (!referenceTableValueMap.ContainsKey(mapKey))
                             {
-                                possibleValues = GetAllPossibleValuesForReferencingColumn(connection, ServerConfig.SchemaName,
+                                possibleValues = GetAllPossibleValuesForReferencingColumn(connection,
+                                    ServerConfig.SchemaName,
                                     referencedTable,
                                     referencedTableIdColumn);
                                 referenceTableValueMap[mapKey] = possibleValues;
@@ -245,7 +234,7 @@ namespace SQLDataGenerator.DataGenerators
             return result;
         }
 
-        protected override void DisableForeignKeyCheck(IDbConnection connection)
+        protected virtual void DisableForeignKeyCheck(IDbConnection connection)
         {
             using var command = connection.CreateCommand();
             command.CommandText = "EXEC sp_MSforeachtable @command1='ALTER TABLE ? NOCHECK CONSTRAINT ALL'";
@@ -253,7 +242,7 @@ namespace SQLDataGenerator.DataGenerators
             Console.WriteLine("Foreign key check constraint disabled.");
         }
 
-        protected override void EnableForeignKeyCheck(IDbConnection connection)
+        protected virtual void EnableForeignKeyCheck(IDbConnection connection)
         {
             using var command = connection.CreateCommand();
             command.CommandText = "EXEC sp_MSforeachtable @command1='ALTER TABLE ? WITH CHECK CHECK CONSTRAINT ALL'";
@@ -270,49 +259,27 @@ namespace SQLDataGenerator.DataGenerators
                 case "nvarchar":
                 case "varchar":
                 case "text":
-                    return GenerateTextValue(columnName);
+                    return FakerUtility.GenerateTextValue(columnName);
 
                 case "int":
                 case "bigint":
                 case "smallint":
                 case "tinyint":
-                    return GetRandomInt();
+                    return FakerUtility.GetRandomInt();
                 case "float":
                 case "real":
                 case "decimal":
                 case "numeric":
-                    return GetRandomDecimal();
+                    return FakerUtility.GetRandomDecimal();
                 case "bit":
-                    return GetRandomBool();
+                    return FakerUtility.GetRandomBool();
                 case "date":
                 case "datetime":
                 case "datetime2":
-                    return GetRandomDate();
+                    return FakerUtility.GetRandomDate();
                 default:
                     return null;
             }
-        }
-
-        private static int GetAchievableBatchSize(int columnLength)
-        {
-            var batchSize = DesiredBatchSize;
-
-            while (batchSize * columnLength >= MaxAllowedParams)
-            {
-                batchSize -= 50;
-            }
-
-            return batchSize;
-        }
-
-        private int GetNumberOfRowsToInsert(TableConfig? tableSettings)
-        {
-            if (tableSettings == null || tableSettings.NumberOfRows == 0)
-            {
-                return CommonSettings.NumberOfRows;
-            }
-
-            return tableSettings.NumberOfRows;
         }
     }
 }

@@ -2,6 +2,8 @@ using System.Data;
 using System.Text;
 using Npgsql;
 using NpgsqlTypes;
+using SQLDataGenerator.Constants;
+using SQLDataGenerator.Helpers;
 using SQLDataGenerator.Models;
 using SQLDataGenerator.Models.Config;
 
@@ -9,8 +11,6 @@ namespace SQLDataGenerator.DataGenerators;
 
 public class PostgreSqlDataGenerator : DataGenerator
 {
-    private const int MaxAllowedParams = 2100;
-    private const int DesiredBatchSize = 500;
     private static readonly Random Random = new();
 
     public PostgreSqlDataGenerator(Configuration config)
@@ -56,7 +56,6 @@ public class PostgreSqlDataGenerator : DataGenerator
     protected override Dictionary<string, TableInfo> GetTableData(IDbConnection connection, List<string> tableNames)
     {
         var tableData = new Dictionary<string, TableInfo>();
-        var tableDependencies = new Dictionary<string, List<string>>();
 
         // Retrieve column names and data types for each table
         foreach (var tableName in tableNames)
@@ -65,10 +64,9 @@ public class PostgreSqlDataGenerator : DataGenerator
 
             using (var command = (NpgsqlCommand)connection.CreateCommand())
             {
-                command.CommandText =
-                    "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = @SchemaName AND table_name = @TableName";
-                command.Parameters.AddWithValue("@SchemaName", NpgsqlTypes.NpgsqlDbType.Text, ServerConfig.SchemaName);
-                command.Parameters.AddWithValue("@TableName", NpgsqlTypes.NpgsqlDbType.Text, tableName);
+                command.CommandText = PostgreSqlServerConstants.GetTableColumnsQuery; 
+                command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
+                command.Parameters.AddWithValue("@TableName", NpgsqlDbType.Text, tableName);
 
                 using (var reader = command.ExecuteReader())
                 {
@@ -85,23 +83,9 @@ public class PostgreSqlDataGenerator : DataGenerator
             // Retrieve foreign key relationships for the current table.
             using (var command = (NpgsqlCommand)connection.CreateCommand())
             {
-                command.CommandText = @"
-        SELECT
-            conname AS ForeignKeyName,
-            conrelid::regclass::text AS TableName,
-            a.attname AS ColumnName,
-            confrelid::regclass::text AS ReferencedTableName,
-            a2.attname AS ReferencedColumnName
-        FROM
-            pg_constraint AS c
-            JOIN pg_namespace AS ns ON c.connamespace = ns.oid
-            JOIN pg_attribute AS a ON c.conrelid = a.attrelid AND a.attnum = ANY(c.conkey)
-            JOIN pg_attribute AS a2 ON c.confrelid = a2.attrelid AND a2.attnum = ANY(c.confkey)
-        WHERE
-            ns.nspname = @SchemaName AND c.contype = 'f' AND conrelid::regclass::text = @ConRelText";
-
-                command.Parameters.AddWithValue("@SchemaName", NpgsqlTypes.NpgsqlDbType.Text, ServerConfig.SchemaName);
-                command.Parameters.AddWithValue("@ConRelText", NpgsqlTypes.NpgsqlDbType.Text,
+                command.CommandText = PostgreSqlServerConstants.GetForeignKeyRelationshipsQuery;
+                command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
+                command.Parameters.AddWithValue("@ConRelText", NpgsqlDbType.Text,
                     $"{ServerConfig.SchemaName}.{tableName}");
 
                 using (var reader = command.ExecuteReader())
@@ -131,7 +115,6 @@ public class PostgreSqlDataGenerator : DataGenerator
     {
         // Disable foreign key constraints before inserting data.
         DisableForeignKeyCheck(connection);
-
 
         var primaryColumn = tableInfo.Columns[0]; // Assuming the first column is the primary key column.
 
@@ -236,27 +219,27 @@ public class PostgreSqlDataGenerator : DataGenerator
             case NpgsqlDbType.Text:
             case NpgsqlDbType.Varchar:
             case NpgsqlDbType.Json:
-                return GenerateTextValue(columnName);
+                return FakerUtility.GenerateTextValue(columnName);
 
             case NpgsqlDbType.Integer:
             case NpgsqlDbType.Bigint:
             case NpgsqlDbType.Smallint:
-                return GetRandomInt();
+                return FakerUtility.GetRandomInt();
             case NpgsqlDbType.Numeric:
             case NpgsqlDbType.Real:
             case NpgsqlDbType.Double:
-                return GetRandomDecimal();
+                return FakerUtility.GetRandomDecimal();
             case NpgsqlDbType.Boolean:
-                return GetRandomBool();
+                return FakerUtility.GetRandomBool();
             case NpgsqlDbType.Date:
             case NpgsqlDbType.Timestamp:
-                return GetRandomDate();
+                return FakerUtility.GetRandomDate();
             default:
                 return null;
         }
     }
 
-    protected override void DisableForeignKeyCheck(IDbConnection connection)
+    protected virtual void DisableForeignKeyCheck(IDbConnection connection)
     {
         using var command = connection.CreateCommand();
         command.CommandText = "SET session_replication_role = 'replica'";
@@ -264,7 +247,7 @@ public class PostgreSqlDataGenerator : DataGenerator
         Console.WriteLine("Foreign key check constraint disabled.");
     }
 
-    protected override void EnableForeignKeyCheck(IDbConnection connection)
+    protected virtual void EnableForeignKeyCheck(IDbConnection connection)
     {
         using var command = connection.CreateCommand();
         command.CommandText = "SET session_replication_role = 'origin';";
@@ -276,8 +259,8 @@ public class PostgreSqlDataGenerator : DataGenerator
     {
         var tableNames = new HashSet<string>();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT table_name FROM information_schema.tables WHERE table_schema = @SchemaName";
-        command.Parameters.AddWithValue("@SchemaName", NpgsqlTypes.NpgsqlDbType.Text, ServerConfig.SchemaName);
+        command.CommandText = PostgreSqlServerConstants.GetTableNamesQuery; 
+        command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
 
         using var reader = command.ExecuteReader();
         while (reader.Read())
@@ -329,9 +312,7 @@ public class PostgreSqlDataGenerator : DataGenerator
         IDictionary<string, int> indegree)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = @"select constraint_name, unique_constraint_name
-                from information_schema.referential_constraints
-                where unique_constraint_schema = @SchemaName";
+        command.CommandText = PostgreSqlServerConstants.GetForeignKeyConstraintsQuery;
         command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
 
         using var reader = command.ExecuteReader();
@@ -349,44 +330,7 @@ public class PostgreSqlDataGenerator : DataGenerator
             indegree[depTab]++;
         }
     }
-
-    // Sort tables by dependency
-
-    private IEnumerable<string> SortTablesByDependency(Dictionary<string, List<string>> tableDependencies)
-    {
-        var orderedTableNames = new List<string>();
-        var visitedTables = new HashSet<string>();
-
-        foreach (var tableName in tableDependencies.Keys)
-        {
-            VisitTable(tableName, tableDependencies, orderedTableNames, visitedTables);
-        }
-
-        return orderedTableNames;
-    }
-
-    // Recursive function to visit tables and their dependencies
-    private void VisitTable(string tableName, IReadOnlyDictionary<string, List<string>> tableDependencies,
-        ICollection<string> orderedTableNames, ISet<string> visitedTables)
-    {
-        if (visitedTables.Contains(tableName))
-        {
-            return;
-        }
-
-        visitedTables.Add(tableName);
-
-        if (tableDependencies.TryGetValue(tableName, out var referencedTables))
-        {
-            foreach (var referencedTable in referencedTables)
-            {
-                VisitTable(referencedTable, tableDependencies, orderedTableNames, visitedTables);
-            }
-        }
-
-        orderedTableNames.Add(tableName);
-    }
-
+    
     private static NpgsqlDbType GetNpgsqlDbType(string dataTypeStr)
     {
         dataTypeStr = dataTypeStr.ToLower();
@@ -463,27 +407,5 @@ public class PostgreSqlDataGenerator : DataGenerator
         }
 
         return result;
-    }
-
-    private static int GetAchievableBatchSize(int columnLength)
-    {
-        var batchSize = DesiredBatchSize;
-
-        while (batchSize * columnLength >= MaxAllowedParams)
-        {
-            batchSize -= 50;
-        }
-
-        return batchSize;
-    }
-
-    private int GetNumberOfRowsToInsert(TableConfig? tableSettings)
-    {
-        if (tableSettings == null || tableSettings.NumberOfRows == 0)
-        {
-            return CommonSettings.NumberOfRows;
-        }
-
-        return tableSettings.NumberOfRows;
     }
 }
