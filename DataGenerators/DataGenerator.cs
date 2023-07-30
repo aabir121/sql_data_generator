@@ -8,15 +8,18 @@ namespace SQLDataGenerator.DataGenerators
     public abstract class DataGenerator
     {
         protected readonly ServerConfiguration ServerConfig;
+        protected Dictionary<string, int> RowsInsertedMap;
         private readonly CommonSettings _commonSettings;
         private readonly TableSettings _tableSettings;
-        
+
         private const int MaxAllowedParams = 2100;
         private const int DesiredBatchSize = 500;
+        private DateTime _startTime;
 
         protected DataGenerator(Configuration config)
         {
             ServerConfig = config.ServerConfiguration;
+            RowsInsertedMap = new Dictionary<string, int>();
             _commonSettings = config.CommonSettings;
             _tableSettings = config.TableSettings;
         }
@@ -25,34 +28,20 @@ namespace SQLDataGenerator.DataGenerators
         {
             try
             {
-                // Connect to the database server using the provided credentials.
+                _startTime = DateTime.Now;
                 using var connection = GetDbConnection();
                 connection.Open();
                 Console.WriteLine("Connected to the database server.");
 
-                // Retrieve all table names from the selected schema.
                 var tableNames = GetTableNames(connection);
-
-                // Get column information and foreign key relationships for each table.
                 var tableData = GetTableData(connection, tableNames);
+                var tableConfigsMap = CreateTableConfigMap();
 
-                var tableConfigsMap = new Dictionary<string, TableConfig>();
-                foreach (var c in _tableSettings.Config)
-                {
-                    tableConfigsMap[c.Name] = c;
-                }
+                GenerateAndInsertData(connection, tableNames, tableData, tableConfigsMap);
 
-                // Generate and insert data into each table.
-                var tableNamesToWorkWith = FilterBasedOnSettings(tableNames);
-                foreach (var tableName in tableNamesToWorkWith)
-                {
-                    var tableInfo = tableData[tableName];
-                    InsertDataIntoTable(connection, tableName, tableInfo,
-                        tableConfigsMap.TryGetValue(tableName, out var config) ? config : null);
-                }
-
-                // Show a message indicating successful data generation.
-                Console.WriteLine("Data generation completed.");
+                Console.WriteLine("Data generation completed successfully.");
+                
+                DisplayStats();
             }
             catch (Exception ex)
             {
@@ -61,6 +50,59 @@ namespace SQLDataGenerator.DataGenerators
                 Console.WriteLine(ex.StackTrace);
             }
         }
+        
+        private void DisplayStats()
+        {
+            var endTime = DateTime.Now;
+            var totalTimeTaken = endTime - _startTime;
+
+            Console.WriteLine("----- Data Generation Statistics -----");
+            Console.WriteLine($"Total Time Taken: {FormatTimeSpan(totalTimeTaken)}");
+            foreach (var table in RowsInsertedMap)
+            {
+                Console.WriteLine($"Table: {table.Key}, Rows Inserted: {table.Value}");
+            }
+            Console.WriteLine("--------------------------------------");
+        }
+        
+        private static string FormatTimeSpan(TimeSpan timeSpan)
+        {
+            // Format the TimeSpan to a user-readable format.
+            return timeSpan.ToString(@"hh\:mm\:ss\.fff");
+        }
+
+        private Dictionary<string, TableConfig> CreateTableConfigMap()
+        {
+            var tableConfigsMap = new Dictionary<string, TableConfig>();
+            foreach (var config in _tableSettings.Config)
+            {
+                tableConfigsMap[config.Name] = config;
+            }
+
+            return tableConfigsMap;
+        }
+
+        private void GenerateAndInsertData(IDbConnection connection, List<string> tableNames,
+            Dictionary<string, TableInfo> tableData, Dictionary<string, TableConfig> tableConfigsMap)
+        {
+            var tableNamesToWorkWith = FilterBasedOnSettings(tableNames);
+            var totalTables = tableNamesToWorkWith.Count;
+            var currentTable = 0;
+
+            foreach (var tableName in tableNamesToWorkWith)
+            {
+                currentTable++;
+                var tableInfo = tableData[tableName];
+                var tableConfig = tableConfigsMap.TryGetValue(tableName, out var config) ? config : null;
+
+                Console.WriteLine($"Generating data for Table {currentTable}/{totalTables}: {tableName}");
+
+                InsertDataIntoTable(connection, tableName, tableInfo, tableConfig);
+
+                Console.WriteLine($"Data generation for Table {currentTable}/{totalTables}: {tableName} completed.");
+            }
+        }
+
 
         private List<string> FilterBasedOnSettings(List<string> tableNames)
         {
@@ -79,7 +121,8 @@ namespace SQLDataGenerator.DataGenerators
 
         protected abstract List<string> GetTableNames(IDbConnection connection);
 
-        protected abstract Dictionary<string, TableInfo> GetTableData(IDbConnection connection, List<string> tableNames);
+        protected abstract Dictionary<string, TableInfo>
+            GetTableData(IDbConnection connection, List<string> tableNames);
 
         protected abstract void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo,
             TableConfig? tableConfig);
@@ -89,17 +132,16 @@ namespace SQLDataGenerator.DataGenerators
             var placeholders = columns.Select(t => $"@{t}{rowIdx}").ToList();
             return string.Join(", ", placeholders);
         }
-        
-        protected object? GenerateRandomValue(string dataType, string columnName,
-            List<object>? tableConfigValidValues)
+
+        protected object? GenerateRandomValue(string dataType, string columnName, List<object>? tableConfigValidValues)
         {
-            return tableConfigValidValues != null ? 
-                FakerUtility.Instance.PickRandom(tableConfigValidValues) : 
-                GenerateRandomValueBasedOnDataType(dataType, columnName);
+            return tableConfigValidValues != null
+                ? FakerUtility.Instance.PickRandom(tableConfigValidValues)
+                : GenerateRandomValueBasedOnDataType(dataType, columnName);
         }
 
         protected abstract object? GenerateRandomValueBasedOnDataType(string dataType, string columnName);
-        
+
         protected int GetNumberOfRowsToInsert(TableConfig? tableSettings)
         {
             if (tableSettings == null || tableSettings.NumberOfRows == 0)
@@ -109,7 +151,7 @@ namespace SQLDataGenerator.DataGenerators
 
             return tableSettings.NumberOfRows;
         }
-        
+
         protected static int GetAchievableBatchSize(int columnLength)
         {
             var batchSize = DesiredBatchSize;

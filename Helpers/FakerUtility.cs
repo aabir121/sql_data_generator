@@ -36,73 +36,34 @@ public class FakerUtility
 
     public static string GenerateTextValue(string columnName)
     {
-        if (Regex.IsMatch(columnName, @"\b(?:name|fullname)\b", RegexOptions.IgnoreCase))
+        // Define the mapping of column name keywords to Faker methods.
+        var keywordToMethodMap = new Dictionary<string, Func<string>>
         {
-            return Instance.Name.FullName();
+            { @"\b(?:name|fullname)\b", () => Instance.Name.FullName() },
+            { @"\b(?:email)\b", () => Instance.Internet.Email() },
+            { @"\b(?:address)\b", () => Instance.Address.FullAddress() },
+            { @"\b(?:phone)\b", () => Instance.Phone.PhoneNumber() },
+            { @"\b(?:password)\b", () => Instance.Internet.Password() },
+            { @"\b(?:picture)\b", () => Instance.Image.LoremFlickrUrl() },
+            { @"\b(?:url)\b", () => Instance.Internet.Url() },
+            { @"\b(?:price)\b", () => Instance.Commerce.Price() },
+            { @"\b(?:review)\b", () => Instance.Rant.Review() },
+            { @"\b(?:country)\b", () => Instance.Address.Country() },
+            { @"\b(?:city)\b", () => Instance.Address.City() },
+            { @"\b(?:zipcode)\b", () => Instance.Address.ZipCode() },
+            { @"\b(?:message)\b", () => Instance.Lorem.Text() },
+            { @"\b(?:description)\b", () => Instance.Random.Words() },
+        };
+
+        foreach (var kvp in keywordToMethodMap)
+        {
+            if (Regex.IsMatch(columnName, kvp.Key, RegexOptions.IgnoreCase))
+            {
+                return kvp.Value();
+            }
         }
 
-        if (Regex.IsMatch(columnName, @"\b(?:email)\b", RegexOptions.IgnoreCase))
-        {
-            return Instance.Internet.Email();
-        }
-
-        if (Regex.IsMatch(columnName, @"\b(?:address)\b", RegexOptions.IgnoreCase))
-        {
-            return Instance.Address.FullAddress();
-        }
-
-        if (Regex.IsMatch(columnName, @"\b(?:phone)\b", RegexOptions.IgnoreCase))
-        {
-            return Instance.Phone.PhoneNumber();
-        }
-
-        if (Regex.IsMatch(columnName, @"\b(?:password)\b", RegexOptions.IgnoreCase))
-        {
-            return Instance.Internet.Password();
-        }
-
-        if (Regex.IsMatch(columnName, @"\b(?:picture)\b", RegexOptions.IgnoreCase))
-        {
-            return Instance.Image.LoremFlickrUrl();
-        }
-
-        if (Regex.IsMatch(columnName, @"\b(?:url)\b", RegexOptions.IgnoreCase))
-        {
-            return Instance.Internet.Url();
-        }
-
-        if (Regex.IsMatch(columnName, @"\b(?:price)\b", RegexOptions.IgnoreCase))
-        {
-            return Instance.Commerce.Price();
-        }
-
-        if (Regex.IsMatch(columnName, @"\b(?:review)\b", RegexOptions.IgnoreCase))
-        {
-            return Instance.Rant.Review();
-        }
-
-        if (Regex.IsMatch(columnName, @"\b(?:country)\b", RegexOptions.IgnoreCase))
-        {
-            return Instance.Address.Country();
-        }
-
-        if (Regex.IsMatch(columnName, @"\b(?:city)\b", RegexOptions.IgnoreCase))
-        {
-            return Instance.Address.City();
-        }
-
-        if (Regex.IsMatch(columnName, @"\b(?:zipcode)\b", RegexOptions.IgnoreCase))
-        {
-            return Instance.Address.ZipCode();
-        }
-
-        if (Regex.IsMatch(columnName, @"\b(?:message)\b", RegexOptions.IgnoreCase))
-        {
-            return Instance.Lorem.Text();
-        }
-
-        return Regex.IsMatch(columnName, @"\b(?:description)\b", RegexOptions.IgnoreCase)
-            ? Instance.Random.Words()
-            : Instance.Lorem.Word();
+        // If no specific keyword is matched, return the default Faker value.
+        return Instance.Lorem.Word();
     }
 }
