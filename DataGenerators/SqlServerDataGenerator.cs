@@ -245,22 +245,6 @@ namespace SQLDataGenerator.DataGenerators
             return result;
         }
 
-
-        private static object? GenerateRandomValueForReferencingColumn(IDbConnection connection, string schemaName,
-            string referencedTable,
-            string referencedIdColumn)
-        {
-            // Assuming the primary key of the referenced table is an integer-based type (e.g., int, bigint, smallint, tinyint)
-            // or a uniqueidentifier (GUID).
-            using var command = connection.CreateCommand();
-            command.CommandText =
-                $"SELECT TOP 1 {referencedIdColumn} FROM {schemaName}.{referencedTable} ORDER BY NEWID()";
-
-            var result = command.ExecuteScalar();
-            return result;
-        }
-
-
         protected override void DisableForeignKeyCheck(IDbConnection connection)
         {
             using var command = connection.CreateCommand();

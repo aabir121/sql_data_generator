@@ -82,8 +82,7 @@ namespace SQLDataGenerator.DataGenerators
 
         protected abstract List<string> GetTableNames(IDbConnection connection);
 
-        protected abstract Dictionary<string, TableInfo>
-            GetTableData(IDbConnection connection, List<string> tableNames);
+        protected abstract Dictionary<string, TableInfo> GetTableData(IDbConnection connection, List<string> tableNames);
 
         protected abstract void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo,
             TableConfig? tableConfig);
