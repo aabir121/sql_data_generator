@@ -51,6 +51,7 @@ The `config.json` file should follow the structure below:
   "database": {
     "serverName": "YOUR_SERVER_NAME",
     "databaseName": "YOUR_DATABASE_NAME",
+    "port": 1111,
     "schemaName": "YOUR_SCHEMA_NAME",
     "username": "YOUR_USERNAME",
     "password": "YOUR_PASSWORD"
@@ -91,6 +92,7 @@ Sure! Here's a bullet point list describing the `config.json` file and how to us
 - `database`: Contains the database connection details.
     - `serverName`: Replace with your SQL Server name.
     - `databaseName`: Replace with your database name.
+    - `port`: Replace with your database port number (remove the property if you do not have any specific)
     - `schemaName`: Replace with your database schema name.
     - `username`: Replace with your database username.
     - `password`: Replace with your database password.
@@ -153,4 +155,4 @@ For any inquiries or support, please contact aabir121@gmail.com.
 
 ## Note
 
-This tool is currently under development, and support for MySQL and PostgreSQL is planned for future updates. Stay tuned for more features and improvements!
+This tool is currently under development, and support for MySQL is planned for future updates. Stay tuned for more features and improvements!

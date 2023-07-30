@@ -1,7 +1,5 @@
 using System.Data;
-using System.Text.RegularExpressions;
-using Bogus;
-using Microsoft.Data.SqlClient;
+using SQLDataGenerator.Helpers;
 using SQLDataGenerator.Models;
 using SQLDataGenerator.Models.Config;
 
@@ -10,52 +8,40 @@ namespace SQLDataGenerator.DataGenerators
     public abstract class DataGenerator
     {
         protected readonly ServerConfiguration ServerConfig;
-        protected readonly CommonSettings CommonSettings;
+        protected readonly Dictionary<string, int> RowsInsertedMap;
+        private readonly CommonSettings _commonSettings;
         private readonly TableSettings _tableSettings;
 
-        private readonly Faker _faker;
+        private const int MaxAllowedParams = 2100;
+        private const int DesiredBatchSize = 500;
+        protected DateTime StartTime;
 
         protected DataGenerator(Configuration config)
         {
             ServerConfig = config.ServerConfiguration;
-            CommonSettings = config.CommonSettings;
+            RowsInsertedMap = new Dictionary<string, int>();
+            _commonSettings = config.CommonSettings;
             _tableSettings = config.TableSettings;
-
-            _faker = new Faker();
         }
 
         public void GenerateData()
         {
             try
             {
-                // Connect to the database server using the provided credentials.
+                StartTime = DateTime.Now;
                 using var connection = GetDbConnection();
                 connection.Open();
                 Console.WriteLine("Connected to the database server.");
 
-                // Retrieve all table names from the selected schema.
                 var tableNames = GetTableNames(connection);
-
-                // Get column information and foreign key relationships for each table.
                 var tableData = GetTableData(connection, tableNames);
+                var tableConfigsMap = CreateTableConfigMap();
 
-                var tableConfigsMap = new Dictionary<string, TableConfig>();
-                foreach (var c in _tableSettings.Config)
-                {
-                    tableConfigsMap[c.Name] = c;
-                }
+                GenerateAndInsertData(connection, tableNames, tableData, tableConfigsMap);
 
-                // Generate and insert data into each table.
-                var tableNamesToWorkWith = FilterBasedOnSettings(tableNames);
-                foreach (var tableName in tableNamesToWorkWith)
-                {
-                    var tableInfo = tableData[tableName];
-                    InsertDataIntoTable(connection, tableName, tableInfo,
-                        tableConfigsMap.TryGetValue(tableName, out var config) ? config : null);
-                }
-
-                // Show a message indicating successful data generation.
-                Console.WriteLine("Data generation completed.");
+                Console.WriteLine("Data generation completed successfully.");
+                
+                DisplayStats();
             }
             catch (Exception ex)
             {
@@ -64,6 +50,88 @@ namespace SQLDataGenerator.DataGenerators
                 Console.WriteLine(ex.StackTrace);
             }
         }
+
+        protected void ReportProgress(int batchSize, int batches, int batchIndex, int totalRows)
+        {
+            Console.SetCursorPosition(0, Console.CursorTop); // Move the cursor to the start of the line.
+            var progress = (float)(batchIndex + 1) / batches * 100;
+            var remainingRows = Math.Max(0, totalRows - (batchIndex + 1) * batchSize);
+            var eta = CalculateEta(StartTime, batchIndex, batches);
+            
+            const int progressBarWidth = 30; // Width of the progress bar (adjust as needed)
+            var progressValue = (int)(progress / 100 * progressBarWidth);
+            var progressBar = new string('#', progressValue).PadRight(progressBarWidth, '-');
+            
+            var progressText = $"Progress: [{progressBar}] {progress:F2}% | ETA: {FormatTimeSpan(eta)} | Remaining Rows: {remainingRows}/{totalRows}";
+            Console.SetCursorPosition(0, Console.CursorTop); // Move the cursor to the beginning of the line.
+            Console.Write(progressText.PadRight(Console.WindowWidth - 1)); // Pad with spaces to clear previous text.
+        }
+        
+        private static TimeSpan CalculateEta(DateTime startTime, int batchIndex, int totalBatches)
+        {
+            var elapsedTime = DateTime.Now - startTime;
+            var batchesRemaining = totalBatches - batchIndex - 1;
+            var averageBatchTime = elapsedTime / (batchIndex + 1);
+            return averageBatchTime * batchesRemaining;
+        }
+        
+        private void DisplayStats()
+        {
+            var endTime = DateTime.Now;
+            var totalTimeTaken = endTime - StartTime;
+
+            Console.WriteLine();
+            Console.WriteLine();
+
+            Console.WriteLine("----- Data Generation Statistics -----");
+            Console.WriteLine($"Total Time Taken: {FormatTimeSpan(totalTimeTaken)}");
+            foreach (var table in RowsInsertedMap)
+            {
+                Console.WriteLine($"Table: {table.Key}, Rows Inserted: {table.Value}");
+            }
+            Console.WriteLine("--------------------------------------");
+        }
+
+        private static string FormatTimeSpan(TimeSpan timeSpan)
+        {
+            // Format the TimeSpan to a user-readable format.
+            return timeSpan.ToString(@"hh\:mm\:ss\.fff");
+        }
+
+        private Dictionary<string, TableConfig> CreateTableConfigMap()
+        {
+            var tableConfigsMap = new Dictionary<string, TableConfig>();
+            foreach (var config in _tableSettings.Config)
+            {
+                tableConfigsMap[config.Name.ToLower()] = config;
+            }
+
+            return tableConfigsMap;
+        }
+
+        private void GenerateAndInsertData(IDbConnection connection, List<string> tableNames,
+            IReadOnlyDictionary<string, TableInfo> tableData, IReadOnlyDictionary<string, TableConfig> tableConfigsMap)
+        {
+            var tableNamesToWorkWith = FilterBasedOnSettings(tableNames);
+            var totalTables = tableNamesToWorkWith.Count;
+            var currentTable = 0;
+
+            foreach (var tableName in tableNamesToWorkWith)
+            {
+                currentTable++;
+                var tableInfo = tableData[tableName];
+                var tableConfig = tableConfigsMap.TryGetValue(tableName.ToLower(), out var config) ? config : null;
+
+                Console.WriteLine("--------------------------------------");
+                Console.WriteLine($"Generating data for Table {currentTable}/{totalTables}: {tableName}");
+
+                InsertDataIntoTable(connection, tableName, tableInfo, tableConfig);
+
+                Console.WriteLine($"Data generation for Table {currentTable}/{totalTables}: {tableName} completed.");
+                Console.WriteLine("--------------------------------------");
+            }
+        }
+
 
         private List<string> FilterBasedOnSettings(List<string> tableNames)
         {
@@ -88,131 +156,41 @@ namespace SQLDataGenerator.DataGenerators
         protected abstract void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo,
             TableConfig? tableConfig);
 
-        protected abstract void DisableForeignKeyCheck(SqlConnection connection);
-
-        protected abstract void EnableForeignKeyCheck(SqlConnection connection);
-
         protected static string GetParamPlaceholders(IEnumerable<string> columns, int rowIdx)
         {
             var placeholders = columns.Select(t => $"@{t}{rowIdx}").ToList();
             return string.Join(", ", placeholders);
         }
 
-        protected object? GenerateRandomValueForDataType(string dataType, string columnName,
-            List<object>? tableConfigValidValues)
+        protected object? GenerateRandomValue(string dataType, string columnName, List<object>? tableConfigValidValues)
         {
-            if (tableConfigValidValues != null)
-            {
-                return _faker.PickRandom(tableConfigValidValues);
-            }
-
-            dataType = dataType.ToLower();
-
-            switch (dataType)
-            {
-                case "nvarchar":
-                case "varchar":
-                case "text":
-                    return GenerateTextValue(columnName);
-
-                case "int":
-                case "bigint":
-                case "smallint":
-                case "tinyint":
-                    return _faker.Random.Number(1, 100);
-
-                case "float":
-                case "real":
-                case "decimal":
-                case "numeric":
-                    return _faker.Random.Decimal(1, 100);
-
-                case "bit":
-                    return _faker.Random.Bool();
-
-                case "date":
-                case "datetime":
-                case "datetime2":
-                    return _faker.Date.Past();
-
-                // Add more cases to handle other data types
-                // For custom data types, you might need to implement your own logic.
-
-                default:
-                    return null;
-            }
+            return tableConfigValidValues != null
+                ? FakerUtility.Instance.PickRandom(tableConfigValidValues)
+                : GenerateRandomValueBasedOnDataType(dataType, columnName);
         }
 
-        private object GenerateTextValue(string columnName)
+        protected abstract object? GenerateRandomValueBasedOnDataType(string dataType, string columnName);
+
+        protected int GetNumberOfRowsToInsert(TableConfig? tableSettings)
         {
-            if (Regex.IsMatch(columnName, @"\b(?:name|fullname)\b", RegexOptions.IgnoreCase))
+            if (tableSettings == null || tableSettings.NumberOfRows == 0)
             {
-                return _faker.Name.FullName();
+                return _commonSettings.NumberOfRows;
             }
 
-            if (Regex.IsMatch(columnName, @"\b(?:email)\b", RegexOptions.IgnoreCase))
+            return tableSettings.NumberOfRows;
+        }
+
+        protected static int GetAchievableBatchSize(int columnLength)
+        {
+            var batchSize = DesiredBatchSize;
+
+            while (batchSize * columnLength >= MaxAllowedParams)
             {
-                return _faker.Internet.Email();
+                batchSize -= 50;
             }
 
-            if (Regex.IsMatch(columnName, @"\b(?:address)\b", RegexOptions.IgnoreCase))
-            {
-                return _faker.Address.FullAddress();
-            }
-
-            if (Regex.IsMatch(columnName, @"\b(?:phone)\b", RegexOptions.IgnoreCase))
-            {
-                return _faker.Phone.PhoneNumber();
-            }
-
-            if (Regex.IsMatch(columnName, @"\b(?:password)\b", RegexOptions.IgnoreCase))
-            {
-                return _faker.Internet.Password();
-            }
-
-            if (Regex.IsMatch(columnName, @"\b(?:picture)\b", RegexOptions.IgnoreCase))
-            {
-                return _faker.Image.LoremFlickrUrl();
-            }
-
-            if (Regex.IsMatch(columnName, @"\b(?:url)\b", RegexOptions.IgnoreCase))
-            {
-                return _faker.Internet.Url();
-            }
-
-            if (Regex.IsMatch(columnName, @"\b(?:price)\b", RegexOptions.IgnoreCase))
-            {
-                return _faker.Commerce.Price();
-            }
-
-            if (Regex.IsMatch(columnName, @"\b(?:review)\b", RegexOptions.IgnoreCase))
-            {
-                return _faker.Rant.Review();
-            }
-
-            if (Regex.IsMatch(columnName, @"\b(?:country)\b", RegexOptions.IgnoreCase))
-            {
-                return _faker.Address.Country();
-            }
-
-            if (Regex.IsMatch(columnName, @"\b(?:city)\b", RegexOptions.IgnoreCase))
-            {
-                return _faker.Address.City();
-            }
-
-            if (Regex.IsMatch(columnName, @"\b(?:zipcode)\b", RegexOptions.IgnoreCase))
-            {
-                return _faker.Address.ZipCode();
-            }
-
-            if (Regex.IsMatch(columnName, @"\b(?:message)\b", RegexOptions.IgnoreCase))
-            {
-                return _faker.Lorem.Text();
-            }
-
-            return Regex.IsMatch(columnName, @"\b(?:description)\b", RegexOptions.IgnoreCase)
-                ? _faker.Random.Words()
-                : _faker.Lorem.Word();
+            return batchSize;
         }
     }
 }
