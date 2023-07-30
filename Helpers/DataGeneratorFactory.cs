@@ -11,7 +11,7 @@ public abstract class DataGeneratorFactory
         return serverType switch
         {
             DbServerType.SqlServer => new SqlServerDataGenerator(config),
-            DbServerType.MySql => throw new NotSupportedException("MySQL is not supported yet."),
+            DbServerType.MySql => new MySqlDataGenerator(config),
             DbServerType.PostgreSql => new PostgreSqlDataGenerator(config),
             _ => throw new NotSupportedException("Invalid database server type.")
         };
