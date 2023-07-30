@@ -62,7 +62,9 @@ namespace SQLDataGenerator.DataGenerators
             var progressValue = (int)(progress / 100 * progressBarWidth);
             var progressBar = new string('#', progressValue).PadRight(progressBarWidth, '-');
             
-            Console.Write($"Progress: [{progressBar}] {progress:F2}% | ETA: {FormatTimeSpan(eta)} | Remaining Rows: {remainingRows}/{totalRows}");
+            var progressText = $"Progress: [{progressBar}] {progress:F2}% | ETA: {FormatTimeSpan(eta)} | Remaining Rows: {remainingRows}/{totalRows}";
+            Console.SetCursorPosition(0, Console.CursorTop); // Move the cursor to the beginning of the line.
+            Console.Write(progressText.PadRight(Console.WindowWidth - 1)); // Pad with spaces to clear previous text.
         }
         
         private static TimeSpan CalculateEta(DateTime startTime, int batchIndex, int totalBatches)
