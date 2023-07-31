@@ -8,7 +8,15 @@ public static class PostgreSqlServerConstants
 
     // Query to get column names and data types for a table
     public const string GetTableColumnsQuery =
-        "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = @SchemaName AND table_name = @TableName";
+        @"SELECT column_name, data_type, character_maximum_length 
+            FROM information_schema.columns 
+            WHERE table_schema = @SchemaName AND table_name = @TableName";
+
+    public const string GetPrimaryColumnQuery =
+        @"SELECT constraint_type
+            FROM information_schema.table_constraints
+            WHERE table_schema = @SchemaName AND table_name = @TableName
+              AND constraint_type = 'PRIMARY KEY'";
 
     // Query to get foreign key relationships for a table
     public const string GetForeignKeyRelationshipsQuery = @"

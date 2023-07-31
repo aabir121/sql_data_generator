@@ -96,8 +96,18 @@ public class MySqlDataGenerator : DataGenerator
                     {
                         var columnName = reader.GetString(0);
                         var dataType = reader.GetString(1);
+
+                        var isPrimary = "PRI".Equals(reader.GetString(2));
+                        if (isPrimary)
+                        {
+                            tableInfo.PrimaryColumns.Add(columnName);
+                        }
+
+                        var maxLength = reader.GetInt32(3);
+
                         tableInfo.Columns.Add(columnName);
                         tableInfo.ColumnTypes.Add(columnName, dataType);
+                        tableInfo.ColumnMaxLengths.Add(columnName, maxLength);
                     }
                 }
             }
@@ -120,7 +130,15 @@ public class MySqlDataGenerator : DataGenerator
         {
             DisableForeignKeyCheck(connection);
 
-            var primaryColumn = tableInfo.Columns[0]; // Assuming the first column is the primary key column.
+            var primaryColumn = tableInfo.PrimaryColumns[0]; // Assuming the first column is the primary key column.
+            if (!tableInfo.ColumnTypes.TryGetValue(primaryColumn, out var primaryDataType))
+            {
+                primaryDataType = "int";
+            }
+
+            var lastRowId = primaryDataType.StartsWith("int")
+                ? GetLastIdForIntegerPrimaryColumn(connection, tableName, primaryColumn)
+                : null;
 
             // Generate and insert data in batches.
             var batchSize = GetAchievableBatchSize(tableInfo.Columns.Count); // Set the desired batch size.
@@ -128,7 +146,6 @@ public class MySqlDataGenerator : DataGenerator
             // Console.WriteLine($"Starting to insert {totalRows} rows for {tableName} with batch size {batchSize}");
 
             var batches = (totalRows + batchSize - 1) / batchSize; // Calculate the number of batches.
-            var lastRowId = GetLastIdForIntegerPrimaryColumn(connection, tableName, primaryColumn);
             var referenceTableValueMap = new Dictionary<string, List<object>>();
 
             for (var batchIndex = 0; batchIndex < batches; batchIndex++)
@@ -159,6 +176,7 @@ public class MySqlDataGenerator : DataGenerator
                     foreach (var column in tableInfo.Columns)
                     {
                         if (!tableInfo.ColumnTypes.TryGetValue(column, out var dataType)) continue;
+                        if (!tableInfo.ColumnMaxLengths.TryGetValue(column, out var maxLength)) continue;
                         object? value;
                         if (tableInfo.ForeignKeyRelationships.TryGetValue(column, out var referencedColumn))
                         {
@@ -187,9 +205,13 @@ public class MySqlDataGenerator : DataGenerator
                             {
                                 value = ++lastRowId;
                             }
+                            else if (column == primaryColumn && dataType.StartsWith("char"))
+                            {
+                                value = new Guid().ToString();
+                            }
                             else
                             {
-                                value = GenerateRandomValue(dataType, column,
+                                value = GenerateRandomValue(dataType, column, maxLength,
                                     tableConfig != null &&
                                     tableConfig.ValidValues.TryGetValue(column, out var validVals)
                                         ? validVals
@@ -221,7 +243,7 @@ public class MySqlDataGenerator : DataGenerator
         }
     }
 
-    protected override object? GenerateRandomValueBasedOnDataType(string dataType, string columnName)
+    protected override object? GenerateRandomValueBasedOnDataType(string dataType, string columnName, int? maxLength)
     {
         dataType = dataType.ToLower();
 
@@ -230,7 +252,7 @@ public class MySqlDataGenerator : DataGenerator
             case "nvarchar":
             case "varchar":
             case "text":
-                return FakerUtility.GenerateTextValue(columnName);
+                return FakerUtility.GenerateTextValue(columnName, maxLength);
 
             case "int":
             case "bigint":
@@ -344,7 +366,7 @@ public class MySqlDataGenerator : DataGenerator
         }
     }
 
-    private static int GetLastIdForIntegerPrimaryColumn(IDbConnection connection, string tableName,
+    private static int? GetLastIdForIntegerPrimaryColumn(IDbConnection connection, string tableName,
         string primaryColumnName)
     {
         using var command = connection.CreateCommand();

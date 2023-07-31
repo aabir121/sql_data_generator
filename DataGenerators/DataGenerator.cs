@@ -162,14 +162,14 @@ namespace SQLDataGenerator.DataGenerators
             return string.Join(", ", placeholders);
         }
 
-        protected object? GenerateRandomValue(string dataType, string columnName, List<object>? tableConfigValidValues)
+        protected object? GenerateRandomValue(string dataType, string columnName, int? maxLength, List<object>? tableConfigValidValues)
         {
             return tableConfigValidValues != null
                 ? FakerUtility.Instance.PickRandom(tableConfigValidValues)
-                : GenerateRandomValueBasedOnDataType(dataType, columnName);
+                : GenerateRandomValueBasedOnDataType(dataType, columnName, maxLength);
         }
 
-        protected abstract object? GenerateRandomValueBasedOnDataType(string dataType, string columnName);
+        protected abstract object? GenerateRandomValueBasedOnDataType(string dataType, string columnName, int? maxLength);
 
         protected int GetNumberOfRowsToInsert(TableConfig? tableSettings)
         {

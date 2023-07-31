@@ -34,7 +34,7 @@ public class FakerUtility
         return Instance.Date.Past();
     }
 
-    public static string GenerateTextValue(string columnName)
+public static string GenerateTextValue(string columnName, int? maxLength)
     {
         // Define the mapping of column name keywords to Faker methods.
         var keywordToMethodMap = new Dictionary<string, Func<string>>
@@ -57,13 +57,23 @@ public class FakerUtility
 
         foreach (var kvp in keywordToMethodMap)
         {
-            if (Regex.IsMatch(columnName, kvp.Key, RegexOptions.IgnoreCase))
-            {
-                return kvp.Value();
-            }
+            if (!Regex.IsMatch(columnName, kvp.Key, RegexOptions.IgnoreCase)) continue;
+            var generatedValue = kvp.Value();
+            return TruncateTextIfNeeded(generatedValue, maxLength);
         }
 
         // If no specific keyword is matched, return the default Faker value.
-        return Instance.Lorem.Word();
+        var defaultValue = Instance.Lorem.Word();
+        return TruncateTextIfNeeded(defaultValue, maxLength);
+    }
+
+    private static string TruncateTextIfNeeded(string text, int? maxLength)
+    {
+        if (maxLength.HasValue && maxLength.Value < text.Length)
+        {
+            // If maxLength is smaller than the generated text length, truncate the text.
+            return text[..maxLength.Value];
+        }
+        return text;
     }
 }

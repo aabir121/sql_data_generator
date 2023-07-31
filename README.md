@@ -17,6 +17,7 @@ The Data Generator Tool is a C# .NET Core console application that allows you to
 - Assumes that there is only one primary column per table
 - Assumes the primary column is of type Integer.
 - While populating the string column cannot take the max length into account.
+- Only a integer range can be provided for now for possible values. Min max values for other column types are still not supported.
 
 ## Requirements
 

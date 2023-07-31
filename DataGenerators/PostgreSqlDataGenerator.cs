@@ -72,8 +72,11 @@ namespace SQLDataGenerator.DataGenerators
                         {
                             var columnName = reader.GetString(0);
                             var dataType = reader.GetString(1);
+                            var maxLength = reader.GetInt32(3);
+
                             tableInfo.Columns.Add(columnName);
                             tableInfo.ColumnTypes.Add(columnName, dataType);
+                            tableInfo.ColumnMaxLengths.Add(columnName, maxLength);
                         }
                     }
                 }
@@ -155,6 +158,7 @@ namespace SQLDataGenerator.DataGenerators
                         foreach (var column in tableInfo.Columns)
                         {
                             if (!tableInfo.ColumnTypes.TryGetValue(column, out var dataType)) continue;
+                            if (!tableInfo.ColumnMaxLengths.TryGetValue(column, out var maxLength)) continue;
                             object? value;
                             if (tableInfo.ForeignKeyRelationships.TryGetValue(column, out var referencedColumn))
                             {
@@ -187,7 +191,7 @@ namespace SQLDataGenerator.DataGenerators
                                 }
                                 else
                                 {
-                                    value = GenerateRandomValue(dataType, column,
+                                    value = GenerateRandomValue(dataType, column, maxLength,
                                         tableConfig != null &&
                                         tableConfig.ValidValues.TryGetValue(column, out var validVals)
                                             ? validVals
@@ -219,7 +223,7 @@ namespace SQLDataGenerator.DataGenerators
             }
         }
 
-        protected override object? GenerateRandomValueBasedOnDataType(string postgresDataType, string columnName)
+        protected override object? GenerateRandomValueBasedOnDataType(string postgresDataType, string columnName, int? maxLength)
         {
             try
             {
@@ -232,7 +236,7 @@ namespace SQLDataGenerator.DataGenerators
                     case NpgsqlDbType.Text:
                     case NpgsqlDbType.Varchar:
                     case NpgsqlDbType.Json:
-                        return FakerUtility.GenerateTextValue(columnName);
+                        return FakerUtility.GenerateTextValue(columnName, maxLength);
 
                     case NpgsqlDbType.Integer:
                     case NpgsqlDbType.Bigint:
