@@ -265,7 +265,7 @@ namespace SQLDataGenerator.DataGenerators
             try
             {
                 using var command = connection.CreateCommand();
-                command.CommandText = "SET session_replication_role = 'replica'";
+                command.CommandText = PostgreSqlServerConstants.DisableForeignKeyCheckQuery;
                 command.ExecuteNonQuery();
                 Console.WriteLine("Foreign key check constraint disabled.");
             }
@@ -282,7 +282,7 @@ namespace SQLDataGenerator.DataGenerators
             try
             {
                 using var command = connection.CreateCommand();
-                command.CommandText = "SET session_replication_role = 'origin';";
+                command.CommandText = PostgreSqlServerConstants.EnableForeignKeyCheckQuery;
                 command.ExecuteNonQuery();
                 Console.WriteLine("Foreign key check constraint enabled.");
             }

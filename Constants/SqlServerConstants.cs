@@ -25,4 +25,8 @@ public static class SqlServerConstants
                     INNER JOIN sys.columns cref ON fkc.referenced_object_id = cref.object_id AND fkc.referenced_column_id = cref.column_id
                 WHERE
                     OBJECT_NAME(fk.parent_object_id) = @TableName";
+    
+    public const string EnableForeignKeyCheckQuery = "EXEC sp_MSforeachtable @command1='ALTER TABLE ? WITH CHECK CHECK CONSTRAINT ALL'";
+   
+    public const string DisableForeignKeyCheckQuery = "EXEC sp_MSforeachtable @command1='ALTER TABLE ? NOCHECK CONSTRAINT ALL'";
 }
