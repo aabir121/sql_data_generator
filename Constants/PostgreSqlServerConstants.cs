@@ -30,4 +30,8 @@ public static class PostgreSqlServerConstants
     public const string GetForeignKeyConstraintsQuery = @"select constraint_name, unique_constraint_name
                 from information_schema.referential_constraints
                 where unique_constraint_schema = @SchemaName";
+    
+    public const string EnableForeignKeyCheckQuery = "SET session_replication_role = 'origin'";
+   
+    public const string DisableForeignKeyCheckQuery = "SET session_replication_role = 'replica'";
 }

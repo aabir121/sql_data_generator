@@ -247,7 +247,7 @@ namespace SQLDataGenerator.DataGenerators
             try
             {
                 using var command = connection.CreateCommand();
-                command.CommandText = "EXEC sp_MSforeachtable @command1='ALTER TABLE ? NOCHECK CONSTRAINT ALL'";
+                command.CommandText = SqlServerConstants.DisableForeignKeyCheckQuery;
                 command.ExecuteNonQuery();
                 Console.WriteLine("Foreign key check constraint disabled.");
             }
@@ -264,7 +264,7 @@ namespace SQLDataGenerator.DataGenerators
             try
             {
                 using var command = connection.CreateCommand();
-                command.CommandText = "EXEC sp_MSforeachtable @command1='ALTER TABLE ? WITH CHECK CHECK CONSTRAINT ALL'";
+                command.CommandText = SqlServerConstants.EnableForeignKeyCheckQuery;
                 command.ExecuteNonQuery();
                 Console.WriteLine("Foreign key check constraint enabled.");
             }
