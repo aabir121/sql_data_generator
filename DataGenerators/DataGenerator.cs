@@ -51,30 +51,21 @@ namespace SQLDataGenerator.DataGenerators
             }
         }
 
-        protected void ReportProgress(int batchSize, int batches, int batchIndex, int totalRows)
+        protected static void ReportProgress(int batchSize, int batches, int batchIndex, int totalRows)
         {
             Console.SetCursorPosition(0, Console.CursorTop); // Move the cursor to the start of the line.
             var progress = (float)(batchIndex + 1) / batches * 100;
             var remainingRows = Math.Max(0, totalRows - (batchIndex + 1) * batchSize);
-            var eta = CalculateEta(StartTime, batchIndex, batches);
             
             const int progressBarWidth = 30; // Width of the progress bar (adjust as needed)
             var progressValue = (int)(progress / 100 * progressBarWidth);
             var progressBar = new string('#', progressValue).PadRight(progressBarWidth, '-');
             
-            var progressText = $"Progress: [{progressBar}] {progress:F2}% | ETA: {FormatTimeSpan(eta)} | Remaining Rows: {remainingRows}/{totalRows}";
+            var progressText = $"Progress: [{progressBar}] {progress:F2}% | Remaining Rows: {remainingRows}/{totalRows}";
             Console.SetCursorPosition(0, Console.CursorTop); // Move the cursor to the beginning of the line.
             Console.Write(progressText.PadRight(Console.WindowWidth - 1)); // Pad with spaces to clear previous text.
         }
-        
-        private static TimeSpan CalculateEta(DateTime startTime, int batchIndex, int totalBatches)
-        {
-            var elapsedTime = DateTime.Now - startTime;
-            var batchesRemaining = totalBatches - batchIndex - 1;
-            var averageBatchTime = elapsedTime / (batchIndex + 1);
-            return averageBatchTime * batchesRemaining;
-        }
-        
+
         private void DisplayStats()
         {
             var endTime = DateTime.Now;
