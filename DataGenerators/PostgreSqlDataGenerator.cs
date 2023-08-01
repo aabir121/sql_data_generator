@@ -171,7 +171,7 @@ namespace SQLDataGenerator.DataGenerators
                                 }
                                 else if (column == primaryColumn && dataType.StartsWith("char"))
                                 {
-                                    value = new Guid().ToString();
+                                    value = Guid.NewGuid().ToString();
                                 }
                                 else
                                 {
