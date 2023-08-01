@@ -4,10 +4,9 @@ public static class MySqlServerConstants
 {
    public const string GetTableNamesQuery = "SHOW TABLES";
 
-   public const string GetColumnsQuery = @"select COLUMN_NAME, DATA_TYPE, COLUMN_KEY, CHARACTER_MAXIMUM_LENGTH
+   public const string GetColumnsQuery = @"select TABLE_NAME, COLUMN_NAME, DATA_TYPE, COLUMN_KEY, CHARACTER_MAXIMUM_LENGTH
                                             from information_schema.COLUMNS
-                                            where TABLE_SCHEMA = @DatabaseName
-                                            AND TABLE_NAME = @TableName";
+                                            where TABLE_SCHEMA = @DatabaseName";
 
    public const string GetDependencyQuery = 
        @"select TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME

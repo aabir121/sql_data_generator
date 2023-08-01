@@ -2,23 +2,31 @@ namespace SQLDataGenerator.Constants;
 
 public static class PostgreSqlServerConstants
 {
-    // Query to get table names
     public const string GetTableNamesQuery =
         "SELECT table_name FROM information_schema.tables WHERE table_schema = @SchemaName";
 
-    // Query to get column names and data types for a table
     public const string GetTableColumnsQuery =
-        @"SELECT column_name, data_type, character_maximum_length 
+        @"SELECT table_name, column_name, data_type, character_maximum_length 
             FROM information_schema.columns 
-            WHERE table_schema = @SchemaName AND table_name = @TableName";
+            WHERE table_schema = @SchemaName";
 
     public const string GetPrimaryColumnQuery =
-        @"SELECT constraint_type
-            FROM information_schema.table_constraints
-            WHERE table_schema = @SchemaName AND table_name = @TableName
-              AND constraint_type = 'PRIMARY KEY'";
+        @"SELECT
+                table_name,
+                column_name
+            FROM
+                information_schema.key_column_usage
+            WHERE
+                constraint_name IN (
+                    SELECT
+                        constraint_name
+                    FROM
+                        information_schema.table_constraints
+                    WHERE
+                        table_schema = @SchemaName
+                        AND constraint_type = 'PRIMARY KEY'
+                )";
 
-    // Query to get foreign key relationships for a table
     public const string GetForeignKeyRelationshipsQuery = @"
         SELECT
             conname AS ForeignKeyName,
@@ -32,9 +40,8 @@ public static class PostgreSqlServerConstants
             JOIN pg_attribute AS a ON c.conrelid = a.attrelid AND a.attnum = ANY(c.conkey)
             JOIN pg_attribute AS a2 ON c.confrelid = a2.attrelid AND a2.attnum = ANY(c.confkey)
         WHERE
-            ns.nspname = @SchemaName AND c.contype = 'f' AND conrelid::regclass::text = @ConRelText";
+            ns.nspname = @SchemaName AND c.contype = 'f'";
 
-    // Query to get foreign key constraints
     public const string GetForeignKeyConstraintsQuery = @"select constraint_name, unique_constraint_name
                 from information_schema.referential_constraints
                 where unique_constraint_schema = @SchemaName";

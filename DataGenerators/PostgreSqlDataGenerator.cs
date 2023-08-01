@@ -55,55 +55,27 @@ namespace SQLDataGenerator.DataGenerators
         {
             var tableData = new Dictionary<string, TableInfo>();
 
+            var primaryColumnsMap = GetPrimaryColumns(connection);
+            var foreignKeyMap = GetForeignKeyRelationshipsMap(connection);
+            var tableInfoMap = PopulateTableInfoWithBasicData(connection);
+
             // Retrieve column names and data types for each table
             foreach (var tableName in tableNames)
             {
-                var tableInfo = new TableInfo();
-
-                using (var command = (NpgsqlCommand)connection.CreateCommand())
+                if (!tableInfoMap.TryGetValue(tableName, out var tableInfo))
                 {
-                    command.CommandText = PostgreSqlServerConstants.GetTableColumnsQuery;
-                    command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
-                    command.Parameters.AddWithValue("@TableName", NpgsqlDbType.Text, tableName);
-
-                    using (var reader = command.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            var columnName = reader.GetString(0);
-                            var dataType = reader.GetString(1);
-                            var maxLength = reader.GetInt32(3);
-
-                            tableInfo.Columns.Add(columnName);
-                            tableInfo.ColumnTypes.Add(columnName, dataType);
-                            tableInfo.ColumnMaxLengths.Add(columnName, maxLength);
-                        }
-                    }
+                    continue;
                 }
 
-                // Retrieve foreign key relationships for the current table.
-                using (var command = (NpgsqlCommand)connection.CreateCommand())
+                if (foreignKeyMap.TryGetValue(tableName, out var keyMap))
                 {
-                    command.CommandText = PostgreSqlServerConstants.GetForeignKeyRelationshipsQuery;
-                    command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
-                    command.Parameters.AddWithValue("@ConRelText", NpgsqlDbType.Text,
-                        $"{ServerConfig.SchemaName}.{tableName}");
-
-                    using (var reader = command.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            var columnName = reader.GetString(2);
-                            var referencedTableName = reader.GetString(3);
-                            var referencedColumnName = reader.GetString(4);
-
-                            // Save the foreign key relationship information.
-                            tableInfo.ForeignKeyRelationships.Add(columnName,
-                                $"{referencedTableName.Split(".")[1]}.{referencedColumnName}");
-                        }
-                    }
+                    tableInfo.ForeignKeyRelationships = keyMap;
                 }
 
+                if (primaryColumnsMap.TryGetValue(tableName, out var pkColumns))
+                {
+                    tableInfo.PrimaryColumns = pkColumns;
+                }
 
                 tableData.Add(tableName, tableInfo);
             }
@@ -119,15 +91,23 @@ namespace SQLDataGenerator.DataGenerators
                 // Disable foreign key constraints before inserting data.
                 DisableForeignKeyCheck(connection);
 
-                var primaryColumn = tableInfo.Columns[0]; // Assuming the first column is the primary key column.
+                var primaryColumn = tableInfo.PrimaryColumns[0]; // Assuming the first column is the primary key column.
+                if (!tableInfo.ColumnTypes.TryGetValue(primaryColumn, out var primaryDataType))
+                {
+                    primaryDataType = "int";
+                }
 
+                var lastRowId = primaryDataType.StartsWith("int")
+                    ? GetLastIdForIntegerPrimaryColumn(connection, ServerConfig.SchemaName, tableName, primaryColumn)
+                    : null;
+                
+                
                 // Generate and insert data in batches.
                 var batchSize = GetAchievableBatchSize(tableInfo.Columns.Count); // Set the desired batch size.
                 var totalRows = GetNumberOfRowsToInsert(tableConfig);
                 // Console.WriteLine($"Starting to insert {totalRows} rows for {tableName} with batch size {batchSize}");
 
                 var batches = (totalRows + batchSize - 1) / batchSize; // Calculate the number of batches.
-                var lastRowId = GetLastIdForIntegerPrimaryColumn(connection, ServerConfig.SchemaName, tableName, primaryColumn);
                 var referenceTableValueMap = new Dictionary<string, List<object>>();
 
                 for (var batchIndex = 0; batchIndex < batches; batchIndex++)
@@ -188,6 +168,10 @@ namespace SQLDataGenerator.DataGenerators
                                 if (column == primaryColumn && dataType.StartsWith("int"))
                                 {
                                     value = ++lastRowId;
+                                }
+                                else if (column == primaryColumn && dataType.StartsWith("char"))
+                                {
+                                    value = new Guid().ToString();
                                 }
                                 else
                                 {
@@ -418,7 +402,7 @@ namespace SQLDataGenerator.DataGenerators
             }
         }
 
-        private static int GetLastIdForIntegerPrimaryColumn(IDbConnection connection, string schemaName,
+        private static int? GetLastIdForIntegerPrimaryColumn(IDbConnection connection, string schemaName,
             string tableName, string primaryColumnName)
         {
             using var command = connection.CreateCommand();
@@ -450,6 +434,103 @@ namespace SQLDataGenerator.DataGenerators
             }
 
             return result;
+        }
+        
+                private Dictionary<string, List<string>> GetPrimaryColumns(IDbConnection connection)
+        {
+            var primaryColumnsMap = new Dictionary<string, List<string>>();
+            using (var command = (NpgsqlCommand)connection.CreateCommand())
+            {
+                command.CommandText = PostgreSqlServerConstants.GetPrimaryColumnQuery;
+                command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
+
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var tableName = reader.GetString(0);
+                        var primaryColumnName = reader.GetString(1);
+
+                        if (!primaryColumnsMap.ContainsKey(tableName))
+                        {
+                            primaryColumnsMap[tableName] = new List<string>();
+                        }
+                        
+                        primaryColumnsMap[tableName].Add(primaryColumnName);
+                    }
+                }
+            }
+
+            return primaryColumnsMap;
+        }
+
+        private Dictionary<string, Dictionary<string, string>> GetForeignKeyRelationshipsMap(IDbConnection connection)
+        {
+            var foreignKeyMap = new Dictionary<string, Dictionary<string, string>>();
+            
+            // Retrieve foreign key relationships for the current table.
+            using (var command = (NpgsqlCommand)connection.CreateCommand())
+            {
+                command.CommandText = PostgreSqlServerConstants.GetForeignKeyRelationshipsQuery;
+                command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
+
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var tableName = reader.GetString(1).Split(".")[1];
+
+                        if (!foreignKeyMap.ContainsKey(tableName))
+                        {
+                            foreignKeyMap[tableName] = new Dictionary<string, string>();
+                        }
+
+                        var columnName = reader.GetString(2);
+                        var referencedTableName = reader.GetString(3);
+                        var referencedColumnName = reader.GetString(4);
+
+                        // Save the foreign key relationship information.
+                        foreignKeyMap[tableName].Add(columnName,
+                            $"{referencedTableName.Split(".")[1]}.{referencedColumnName}");
+                    }
+                }
+            }
+
+            return foreignKeyMap;
+        }
+
+        private Dictionary<string, TableInfo> PopulateTableInfoWithBasicData(IDbConnection connection)
+        {
+            var tableInfoMap = new Dictionary<string, TableInfo>();
+            
+            using (var command = (NpgsqlCommand)connection.CreateCommand())
+            {
+                command.CommandText = PostgreSqlServerConstants.GetTableColumnsQuery;
+                command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
+
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var tableName = reader.GetString(0);
+
+                        if (!tableInfoMap.ContainsKey(tableName))
+                        {
+                            tableInfoMap[tableName] = new TableInfo();
+                        }
+                        
+                        var columnName = reader.GetString(1);
+                        var dataType = reader.GetString(2);
+                        int? maxLength = reader.GetValue(3) == DBNull.Value ? null : reader.GetInt32(3);
+
+                        tableInfoMap[tableName].Columns.Add(columnName);
+                        tableInfoMap[tableName].ColumnTypes.Add(columnName, dataType);
+                        tableInfoMap[tableName].ColumnMaxLengths.Add(columnName, maxLength);
+                    }
+                }
+            }
+
+            return tableInfoMap;
         }
     }
 }

@@ -21,8 +21,8 @@ static DbServerType GetServerTypeFromUser()
     {
         Console.WriteLine("Select the database server type:");
         Console.WriteLine("1. SQL Server");
-        Console.WriteLine("2. MySQL (Not supported yet)");
-        Console.WriteLine("3. PostgreSQL (Not supported yet)");
+        Console.WriteLine("2. MySQL");
+        Console.WriteLine("3. PostgreSQL");
         Console.Write("Enter the option (1, 2, or 3): ");
 
         if (int.TryParse(Console.ReadLine(), out var option) && Enum.IsDefined(typeof(DbServerType), option)) return (DbServerType)option;

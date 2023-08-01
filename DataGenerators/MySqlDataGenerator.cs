@@ -53,63 +53,15 @@ public class MySqlDataGenerator : DataGenerator
     {
         var tableData = new Dictionary<string, TableInfo>();
 
-        var tableDepMap = new Dictionary<string, Dictionary<string, string>>();
-
-        // Retrieve foreign key relationships for the current table.
-        using (var command = (MySqlCommand)connection.CreateCommand())
-        {
-            command.CommandText = MySqlServerConstants.GetDependencyQuery;
-            command.Parameters.AddWithValue("@DatabaseName", ServerConfig.DatabaseName);
-
-            using (var reader = command.ExecuteReader())
-            {
-                while (reader.Read())
-                {
-                    var tableName = reader.GetString(0);
-                    var columnName = reader.GetString(1);
-                    var constraintName = $"{reader.GetString(2)}.{reader.GetString(3)}";
-
-                    if (!tableDepMap.ContainsKey(tableName))
-                    {
-                        tableDepMap[tableName] = new Dictionary<string, string>();
-                    }
-
-                    tableDepMap[tableName][columnName] = constraintName;
-                }
-            }
-        }
+        var tableDepMap = PopulateTableDepMap(connection);
+        var tableInfoMap = PopulateBasicTableInfoMap(connection);
 
         // Retrieve column names and data types for each table
         foreach (var tableName in tableNames)
         {
-            var tableInfo = new TableInfo();
-
-            using (var command = (MySqlCommand)connection.CreateCommand())
+            if (!tableInfoMap.TryGetValue(tableName, out var tableInfo))
             {
-                command.CommandText = MySqlServerConstants.GetColumnsQuery;
-                command.Parameters.AddWithValue("@DatabaseName", ServerConfig.DatabaseName);
-                command.Parameters.AddWithValue("@TableName", tableName);
-
-                using (var reader = command.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        var columnName = reader.GetString(0);
-                        var dataType = reader.GetString(1);
-
-                        var isPrimary = "PRI".Equals(reader.GetString(2));
-                        if (isPrimary)
-                        {
-                            tableInfo.PrimaryColumns.Add(columnName);
-                        }
-
-                        var maxLength = reader.GetInt32(3);
-
-                        tableInfo.Columns.Add(columnName);
-                        tableInfo.ColumnTypes.Add(columnName, dataType);
-                        tableInfo.ColumnMaxLengths.Add(columnName, maxLength);
-                    }
-                }
+                continue;
             }
 
             if (tableDepMap.TryGetValue(tableName, out var value))
@@ -397,5 +349,76 @@ public class MySqlDataGenerator : DataGenerator
         }
 
         return result;
+    }
+    
+    private Dictionary<string, Dictionary<string, string>> PopulateTableDepMap(IDbConnection connection)
+    {
+        var tableDepMap = new Dictionary<string, Dictionary<string, string>>();
+
+        // Retrieve foreign key relationships for the current table.
+        using (var command = (MySqlCommand)connection.CreateCommand())
+        {
+            command.CommandText = MySqlServerConstants.GetDependencyQuery;
+            command.Parameters.AddWithValue("@DatabaseName", ServerConfig.DatabaseName);
+
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    var tableName = reader.GetString(0);
+                    var columnName = reader.GetString(1);
+                    var constraintName = $"{reader.GetString(2)}.{reader.GetString(3)}";
+
+                    if (!tableDepMap.ContainsKey(tableName))
+                    {
+                        tableDepMap[tableName] = new Dictionary<string, string>();
+                    }
+
+                    tableDepMap[tableName][columnName] = constraintName;
+                }
+            }
+        }
+
+        return tableDepMap;
+    }
+
+    private Dictionary<string, TableInfo> PopulateBasicTableInfoMap(IDbConnection connection)
+    {
+        var tableInfoMap = new Dictionary<string, TableInfo>();
+        
+        using (var command = (MySqlCommand)connection.CreateCommand())
+        {
+            command.CommandText = MySqlServerConstants.GetColumnsQuery;
+            command.Parameters.AddWithValue("@DatabaseName", ServerConfig.DatabaseName);
+
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    var tableName = reader.GetString(0);
+                    if (!tableInfoMap.ContainsKey(tableName))
+                    {
+                        tableInfoMap[tableName] = new TableInfo();
+                    }
+                    
+                    var columnName = reader.GetString(1);
+                    var dataType = reader.GetString(2);
+
+                    var isPrimary = "PRI".Equals(reader.GetString(3));
+                    if (isPrimary)
+                    {
+                        tableInfoMap[tableName].PrimaryColumns.Add(columnName);
+                    }
+
+                    int? maxLength = reader.GetValue(4) == DBNull.Value ? null : reader.GetInt32(4);
+
+                    tableInfoMap[tableName].Columns.Add(columnName);
+                    tableInfoMap[tableName].ColumnTypes.Add(columnName, dataType);
+                    tableInfoMap[tableName].ColumnMaxLengths.Add(columnName, maxLength);
+                }
+            }
+        }
+
+        return tableInfoMap;
     }
 }

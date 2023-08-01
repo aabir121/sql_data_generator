@@ -40,56 +40,129 @@ namespace SQLDataGenerator.DataGenerators
             return tableNames;
         }
 
+        private Dictionary<string, TableInfo> PopulateBasicTableInfoMap(IDbConnection connection)
+        {
+            var tableInfoMap = new Dictionary<string, TableInfo>();
+            
+            // Retrieve column names and data types for the current table.
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = SqlServerConstants.GetTableColumnsQuery;
+                command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar)
+                    { Value = ServerConfig.SchemaName });
+
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var tableName = reader.GetString(0);
+                        if (!tableInfoMap.ContainsKey(tableName))
+                        {
+                            tableInfoMap[tableName] = new TableInfo();
+                        }
+                        
+                        var columnName = reader.GetString(1);
+                        var dataType = reader.GetString(2);
+                        int? maxLength = reader.GetValue(3) == DBNull.Value ? null : reader.GetInt32(3);
+
+                        tableInfoMap[tableName].Columns.Add(columnName);
+                        tableInfoMap[tableName].ColumnTypes.Add(columnName, dataType);
+                        tableInfoMap[tableName].ColumnMaxLengths.Add(columnName, maxLength);
+                    }
+                }
+            }
+
+            return tableInfoMap;
+        }
+
+        private Dictionary<string, Dictionary<string, string>> PopulateForeignKeyRelationsMap(IDbConnection connection)
+        {
+            var foreignKeyRelationMap = new Dictionary<string, Dictionary<string, string>>();
+            // Retrieve foreign key relationships for the current table.
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = SqlServerConstants.GetForeignKeyRelationshipsQuery;
+                command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar) { Value = ServerConfig.SchemaName });
+
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var tableName = reader.GetString(0);
+                        if (!foreignKeyRelationMap.ContainsKey(tableName))
+                        {
+                            foreignKeyRelationMap[tableName] = new Dictionary<string, string>();
+                        }
+                        
+                        var columnName = reader.GetString(1);
+                        var referencedTableName = reader.GetString(2);
+                        var referencedColumnName = reader.GetString(3);
+
+                        // Save the foreign key relationship information.
+                        foreignKeyRelationMap[tableName].Add(columnName,
+                            $"{referencedTableName}.{referencedColumnName}");
+                    }
+                }
+            }
+
+            return foreignKeyRelationMap;
+        }
+
+        private Dictionary<string, List<string>> PopulatePrimaryColumnsMap(IDbConnection connection)
+        {
+            var pkMap = new Dictionary<string, List<string>>();
+
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = SqlServerConstants.GetPrimaryColumnsQuery;
+                command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar) { Value = ServerConfig.SchemaName });
+
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var tableName = reader.GetString(0);
+                        if (!pkMap.ContainsKey(tableName))
+                        {
+                            pkMap[tableName] = new List<string>();
+                        }
+
+                        var columnName = reader.GetString(1);
+                        
+                        pkMap[tableName].Add(columnName);
+                    }
+                }
+            }
+
+            return pkMap;
+        }
+
 
         protected override Dictionary<string, TableInfo> GetTableData(IDbConnection connection, List<string> tableNames)
         {
             var tableData = new Dictionary<string, TableInfo>();
 
+            var tableInfoMap = PopulateBasicTableInfoMap(connection);
+            var foreignKeyRelationMap = PopulateForeignKeyRelationsMap(connection);
+            var pkMap = PopulatePrimaryColumnsMap(connection);
+            
             foreach (var tableName in tableNames)
             {
-                var tableInfo = new TableInfo();
-
-                // Retrieve column names and data types for the current table.
-                using (var command = connection.CreateCommand())
+                if (!tableInfoMap.TryGetValue(tableName, out var tableInfo))
                 {
-                    command.CommandText = SqlServerConstants.GetTableColumnsQuery;
-                    command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar)
-                        { Value = ServerConfig.SchemaName });
-                    command.Parameters.Add(new SqlParameter("@TableName", SqlDbType.NVarChar) { Value = tableName });
-
-                    using (var reader = command.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            var columnName = reader.GetString(0);
-                            var dataType = reader.GetString(1);
-                            tableInfo.Columns.Add(columnName);
-                            tableInfo.ColumnTypes.Add(columnName, dataType);
-                        }
-                    }
+                    continue;
                 }
 
-                // Retrieve foreign key relationships for the current table.
-                using (var command = connection.CreateCommand())
+                if (foreignKeyRelationMap.TryGetValue(tableName, out var foreignKeyMap))
                 {
-                    command.CommandText = SqlServerConstants.GetForeignKeyRelationshipsQuery;
-                    command.Parameters.Add(new SqlParameter("@TableName", SqlDbType.NVarChar) { Value = tableName });
-
-                    using (var reader = command.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            var columnName = reader.GetString(2);
-                            var referencedTableName = reader.GetString(3);
-                            var referencedColumnName = reader.GetString(4);
-
-                            // Save the foreign key relationship information.
-                            tableInfo.ForeignKeyRelationships.Add(columnName,
-                                $"{referencedTableName}.{referencedColumnName}");
-                        }
-                    }
+                    tableInfo.ForeignKeyRelationships = foreignKeyMap;
                 }
 
+                if (pkMap.TryGetValue(tableName, out var pkColumns))
+                {
+                    tableInfo.PrimaryColumns = pkColumns;
+                }
+                
                 tableData.Add(tableName, tableInfo);
             }
 
@@ -104,16 +177,23 @@ namespace SQLDataGenerator.DataGenerators
                 // Disable foreign key constraints before inserting data.
                 DisableForeignKeyCheck((SqlConnection)connection);
 
-                var primaryColumn = tableInfo.Columns[0]; // Assuming the first column is the primary key column.
+                var primaryColumn = tableInfo.PrimaryColumns[0]; // Assuming the first column is the primary key column.
 
+                if (!tableInfo.ColumnTypes.TryGetValue(primaryColumn, out var primaryDataType))
+                {
+                    primaryDataType = "int";
+                }
+
+                var lastRowId = primaryDataType.StartsWith("int")
+                    ? GetLastIdForIntegerPrimaryColumn(connection, ServerConfig.SchemaName, tableName, primaryColumn)
+                    : null;
+                
                 // Generate and insert data in batches.
                 var batchSize = GetAchievableBatchSize(tableInfo.Columns.Count); // Set the desired batch size.
                 var totalRows = GetNumberOfRowsToInsert(tableConfig);
                 Console.WriteLine($"Starting to insert {totalRows} rows for {tableName} with batch size {batchSize}");
 
                 var batches = (totalRows + batchSize - 1) / batchSize; // Calculate the number of batches.
-                var lastRowId =
-                    GetLastIdForIntegerPrimaryColumn(connection, ServerConfig.SchemaName, tableName, primaryColumn);
                 var referenceTableValueMap = new Dictionary<string, List<object>>();
 
                 for (var batchIndex = 0; batchIndex < batches; batchIndex++)
@@ -144,6 +224,8 @@ namespace SQLDataGenerator.DataGenerators
                         foreach (var column in tableInfo.Columns)
                         {
                             if (!tableInfo.ColumnTypes.TryGetValue(column, out var dataType)) continue;
+                            if (!tableInfo.ColumnMaxLengths.TryGetValue(column, out var maxLength)) continue;
+
                             object? value;
                             if (tableInfo.ForeignKeyRelationships.TryGetValue(column, out var referencedColumn))
                             {
@@ -171,13 +253,17 @@ namespace SQLDataGenerator.DataGenerators
                             }
                             else
                             {
-                                if (column == primaryColumn && dataType.Equals("int"))
+                                if (column == primaryColumn && dataType.StartsWith("int"))
                                 {
                                     value = ++lastRowId;
                                 }
+                                else if (column == primaryColumn && dataType.StartsWith("char"))
+                                {
+                                    value = new Guid().ToString();
+                                }
                                 else
                                 {
-                                    value = GenerateRandomValue(dataType, column,
+                                    value = GenerateRandomValue(dataType, column, maxLength,
                                         tableConfig != null &&
                                         tableConfig.ValidValues.TryGetValue(column, out var validVals)
                                             ? validVals
@@ -208,7 +294,7 @@ namespace SQLDataGenerator.DataGenerators
             }
         }
 
-        private static int GetLastIdForIntegerPrimaryColumn(IDbConnection connection, string schemaName,
+        private static int? GetLastIdForIntegerPrimaryColumn(IDbConnection connection, string schemaName,
             string tableName, string primaryColumnName)
         {
             using var command = connection.CreateCommand();
@@ -276,7 +362,7 @@ namespace SQLDataGenerator.DataGenerators
             }
         }
 
-        protected override object? GenerateRandomValueBasedOnDataType(string dataType, string columnName)
+        protected override object? GenerateRandomValueBasedOnDataType(string dataType, string columnName, int? maxLength)
         {
             try
             {
@@ -287,7 +373,7 @@ namespace SQLDataGenerator.DataGenerators
                     case "nvarchar":
                     case "varchar":
                     case "text":
-                        return FakerUtility.GenerateTextValue(columnName);
+                        return FakerUtility.GenerateTextValue(columnName, maxLength);
 
                     case "int":
                     case "bigint":
