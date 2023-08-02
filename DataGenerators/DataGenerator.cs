@@ -12,9 +12,9 @@ namespace SQLDataGenerator.DataGenerators
         private readonly CommonSettings _commonSettings;
         private readonly TableSettings _tableSettings;
 
-        private const int MaxAllowedParams = 2100;
-        private const int DesiredBatchSize = 500;
-        protected DateTime StartTime;
+        private const int GetMaxAllowedParams = 2100;
+        private const int GetDesiredBatchSize = 500;
+        private DateTime _startTime;
 
         protected DataGenerator(Configuration config)
         {
@@ -28,7 +28,7 @@ namespace SQLDataGenerator.DataGenerators
         {
             try
             {
-                StartTime = DateTime.Now;
+                _startTime = DateTime.Now;
                 using var connection = GetDbConnection();
                 connection.Open();
                 Console.WriteLine("Connected to the database server.");
@@ -40,7 +40,7 @@ namespace SQLDataGenerator.DataGenerators
                 GenerateAndInsertData(connection, tableNames, tableData, tableConfigsMap);
 
                 Console.WriteLine("Data generation completed successfully.");
-                
+
                 DisplayStats();
             }
             catch (Exception ex)
@@ -56,12 +56,13 @@ namespace SQLDataGenerator.DataGenerators
             Console.SetCursorPosition(0, Console.CursorTop); // Move the cursor to the start of the line.
             var progress = (float)(batchIndex + 1) / batches * 100;
             var remainingRows = Math.Max(0, totalRows - (batchIndex + 1) * batchSize);
-            
+
             const int progressBarWidth = 30; // Width of the progress bar (adjust as needed)
             var progressValue = (int)(progress / 100 * progressBarWidth);
             var progressBar = new string('#', progressValue).PadRight(progressBarWidth, '-');
-            
-            var progressText = $"Progress: [{progressBar}] {progress:F2}% | Remaining Rows: {remainingRows}/{totalRows}";
+
+            var progressText =
+                $"Progress: [{progressBar}] {progress:F2}% | Remaining Rows: {remainingRows}/{totalRows}";
             Console.SetCursorPosition(0, Console.CursorTop); // Move the cursor to the beginning of the line.
             Console.Write(progressText.PadRight(Console.WindowWidth - 1)); // Pad with spaces to clear previous text.
         }
@@ -69,7 +70,7 @@ namespace SQLDataGenerator.DataGenerators
         private void DisplayStats()
         {
             var endTime = DateTime.Now;
-            var totalTimeTaken = endTime - StartTime;
+            var totalTimeTaken = endTime - _startTime;
 
             Console.WriteLine();
             Console.WriteLine();
@@ -80,6 +81,7 @@ namespace SQLDataGenerator.DataGenerators
             {
                 Console.WriteLine($"Table: {table.Key}, Rows Inserted: {table.Value}");
             }
+
             Console.WriteLine("--------------------------------------");
         }
 
@@ -153,14 +155,16 @@ namespace SQLDataGenerator.DataGenerators
             return string.Join(", ", placeholders);
         }
 
-        protected object? GenerateRandomValue(string dataType, string columnName, int? maxLength, List<object>? tableConfigValidValues)
+        protected object? GenerateRandomValue(string dataType, string columnName, int? maxLength,
+            List<object>? tableConfigValidValues)
         {
             return tableConfigValidValues != null
                 ? FakerUtility.Instance.PickRandom(tableConfigValidValues)
                 : GenerateRandomValueBasedOnDataType(dataType, columnName, maxLength);
         }
 
-        protected abstract object? GenerateRandomValueBasedOnDataType(string dataType, string columnName, int? maxLength);
+        protected abstract object? GenerateRandomValueBasedOnDataType(string dataType, string columnName,
+            int? maxLength);
 
         protected int GetNumberOfRowsToInsert(TableConfig? tableSettings)
         {
@@ -174,14 +178,116 @@ namespace SQLDataGenerator.DataGenerators
 
         protected static int GetAchievableBatchSize(int columnLength)
         {
-            var batchSize = DesiredBatchSize;
+            var batchSize = GetDesiredBatchSize;
 
-            while (batchSize * columnLength >= MaxAllowedParams)
+            while (batchSize * columnLength >= GetMaxAllowedParams)
             {
                 batchSize -= 50;
             }
 
             return batchSize;
         }
+
+        private object? GenerateRandomValueForRegularColumn(string column, string primaryColumn, string dataType,
+            int? maxLength, ref int? lastRowId, TableConfig? tableConfig)
+        {
+            if (column == primaryColumn && dataType.StartsWith("int"))
+            {
+                return ++lastRowId;
+            }
+
+            if (column == primaryColumn && dataType.StartsWith("char"))
+            {
+                return Guid.NewGuid().ToString();
+            }
+
+            return GenerateRandomValue(dataType, column, maxLength,
+                tableConfig != null &&
+                tableConfig.ValidValues.TryGetValue(column, out var validValues)
+                    ? validValues
+                    : null);
+        }
+
+        private object GenerateDataForReferenceColumn(IDbConnection connection, string referencedColumn,
+            IDictionary<string, List<object>> referenceTableValueMap)
+        {
+            var referencedTable = referencedColumn[..referencedColumn.IndexOf('.')];
+            var referencedTableIdColumn =
+                referencedColumn[(referencedColumn.IndexOf('.') + 1)..];
+            var mapKey = $"{referencedTable}.{referencedTableIdColumn}";
+            List<object> possibleValues;
+            if (!referenceTableValueMap.ContainsKey(mapKey))
+            {
+                possibleValues = AllPossibleValuesForReferencingColumn(connection, referencedTable,
+                    referencedTableIdColumn);
+                referenceTableValueMap[mapKey] = possibleValues;
+            }
+            else
+            {
+                possibleValues = referenceTableValueMap[mapKey];
+            }
+
+            return possibleValues[FakerUtility.Instance.Random.Int(0, possibleValues.Count - 1)];
+        }
+
+        protected object? GenerateRandomValueForColumn(IDbConnection connection, TableInfo tableInfo, string column,
+            string dataType,
+            string primaryColumn, Dictionary<string, List<object>> referenceTableValueMap, ref int? lastRowId,
+            TableConfig? tableConfig, int? maxLength)
+        {
+            if (tableInfo.ForeignKeyRelationships.TryGetValue(column, out var referencedColumn))
+            {
+                return GenerateDataForReferenceColumn(connection, referencedColumn,
+                    referenceTableValueMap);
+            }
+
+            return GenerateRandomValueForRegularColumn(column, primaryColumn, dataType, maxLength, ref lastRowId,
+                tableConfig);
+        }
+
+        protected void AddParametersForEachBatch(IDbConnection connection, string queryString, int startIndex,
+            int endIndex, TableInfo tableInfo,
+            string primaryColumn, Dictionary<string, List<object>> referenceTableValueMap, ref int? lastRowId,
+            TableConfig? tableConfig)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = queryString;
+                // Create a new batch of parameters for each iteration.
+                command.Parameters.Clear();
+
+                // Generate and insert data for each row in the batch.
+                for (var rowIndex = startIndex; rowIndex < endIndex; rowIndex++)
+                {
+                    foreach (var column in tableInfo.Columns)
+                    {
+                        if (!tableInfo.ColumnTypes.TryGetValue(column, out var dataType)) continue;
+                        if (!tableInfo.ColumnMaxLengths.TryGetValue(column, out var maxLength)) continue;
+
+                        var randomValue = GenerateRandomValueForColumn(connection, tableInfo, column, dataType,
+                            primaryColumn, referenceTableValueMap, ref lastRowId, tableConfig, maxLength);
+
+                        command.Parameters.Add(InsertStatementParameter(command, column, dataType,
+                            rowIndex, randomValue));
+                    }
+                }
+
+                command.ExecuteNonQuery();
+            }
+        }
+
+        protected virtual IDbDataParameter InsertStatementParameter(IDbCommand command, string column, string dataType,
+            int rowIndex, object? value)
+        {
+            var param = command.CreateParameter();
+            param.ParameterName = $"@{column}{rowIndex}";
+            param.Value = value;
+
+            return param;
+        }
+
+        protected abstract List<object> AllPossibleValuesForReferencingColumn(IDbConnection connection,
+            string referencedTable,
+            string referencedTableIdColumn);
     }
 }

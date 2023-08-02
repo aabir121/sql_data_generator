@@ -104,9 +104,6 @@ public class MySqlDataGenerator : DataGenerator
             {
                 var startIndex = batchIndex * batchSize;
                 var endIndex = Math.Min(startIndex + batchSize, totalRows);
-                // Console.WriteLine(
-                //     $"Preparing Insert statements for {tableName} and for row number {startIndex} till {endIndex}");
-
                 var insertSql =
                     new StringBuilder(
                         $"INSERT INTO {tableName} ({string.Join(", ", tableInfo.Columns)}) VALUES ");
@@ -118,66 +115,11 @@ public class MySqlDataGenerator : DataGenerator
 
                 insertSql.Length--;
 
-                using var command = new MySqlCommand(insertSql.ToString(), (MySqlConnection)connection);
-                // Create a new batch of parameters for each iteration.
-                command.Parameters.Clear();
-
-                // Generate and insert data for each row in the batch.
-                for (var rowIndex = startIndex; rowIndex < endIndex; rowIndex++)
-                {
-                    foreach (var column in tableInfo.Columns)
-                    {
-                        if (!tableInfo.ColumnTypes.TryGetValue(column, out var dataType)) continue;
-                        if (!tableInfo.ColumnMaxLengths.TryGetValue(column, out var maxLength)) continue;
-                        object? value;
-                        if (tableInfo.ForeignKeyRelationships.TryGetValue(column, out var referencedColumn))
-                        {
-                            // Generate data for referencing column based on the referenced table.
-                            var referencedTable = referencedColumn[..referencedColumn.IndexOf('.')];
-                            var referencedTableIdColumn =
-                                referencedColumn[(referencedColumn.IndexOf('.') + 1)..];
-                            var mapKey = $"{referencedTable}.{referencedTableIdColumn}";
-                            List<object> possibleValues;
-                            if (!referenceTableValueMap.ContainsKey(mapKey))
-                            {
-                                possibleValues = GetAllPossibleValuesForReferencingColumn(connection, referencedTable,
-                                    referencedTableIdColumn);
-                                referenceTableValueMap[mapKey] = possibleValues;
-                            }
-                            else
-                            {
-                                possibleValues = referenceTableValueMap[mapKey];
-                            }
-
-                            value = possibleValues[FakerUtility.Instance.Random.Int(0, possibleValues.Count - 1)];
-                        }
-                        else
-                        {
-                            if (column == primaryColumn && dataType.StartsWith("int"))
-                            {
-                                value = ++lastRowId;
-                            }
-                            else if (column == primaryColumn && dataType.StartsWith("char"))
-                            {
-                                value = Guid.NewGuid().ToString();
-                            }
-                            else
-                            {
-                                value = GenerateRandomValue(dataType, column, maxLength,
-                                    tableConfig != null &&
-                                    tableConfig.ValidValues.TryGetValue(column, out var validVals)
-                                        ? validVals
-                                        : null);
-                            }
-                        }
-
-                        command.Parameters.AddWithValue($"@{column}{rowIndex}", value);
-                    }
-                }
+                AddParametersForEachBatch(connection, insertSql.ToString(), startIndex, endIndex, tableInfo,
+                    primaryColumn,
+                    referenceTableValueMap, ref lastRowId, tableConfig);
 
                 ReportProgress(batchSize, batches, batchIndex, totalRows);
-
-                command.ExecuteNonQuery();
             }
 
             Console.WriteLine();
@@ -329,7 +271,7 @@ public class MySqlDataGenerator : DataGenerator
         return result == DBNull.Value ? 1 : Convert.ToInt32(result);
     }
 
-    private static List<object> GetAllPossibleValuesForReferencingColumn(IDbConnection connection,
+    protected override List<object> AllPossibleValuesForReferencingColumn(IDbConnection connection,
         string referencedTable, string referencedIdColumn)
     {
         using var command = connection.CreateCommand();
@@ -350,7 +292,7 @@ public class MySqlDataGenerator : DataGenerator
 
         return result;
     }
-    
+
     private Dictionary<string, Dictionary<string, string>> PopulateTableDepMap(IDbConnection connection)
     {
         var tableDepMap = new Dictionary<string, Dictionary<string, string>>();
@@ -385,7 +327,7 @@ public class MySqlDataGenerator : DataGenerator
     private Dictionary<string, TableInfo> PopulateBasicTableInfoMap(IDbConnection connection)
     {
         var tableInfoMap = new Dictionary<string, TableInfo>();
-        
+
         using (var command = (MySqlCommand)connection.CreateCommand())
         {
             command.CommandText = MySqlServerConstants.GetColumnsQuery;
@@ -400,7 +342,7 @@ public class MySqlDataGenerator : DataGenerator
                     {
                         tableInfoMap[tableName] = new TableInfo();
                     }
-                    
+
                     var columnName = reader.GetString(1);
                     var dataType = reader.GetString(2);
 

@@ -100,8 +100,8 @@ namespace SQLDataGenerator.DataGenerators
                 var lastRowId = primaryDataType.StartsWith("int")
                     ? GetLastIdForIntegerPrimaryColumn(connection, ServerConfig.SchemaName, tableName, primaryColumn)
                     : null;
-                
-                
+
+
                 // Generate and insert data in batches.
                 var batchSize = GetAchievableBatchSize(tableInfo.Columns.Count); // Set the desired batch size.
                 var totalRows = GetNumberOfRowsToInsert(tableConfig);
@@ -128,70 +128,13 @@ namespace SQLDataGenerator.DataGenerators
 
                     insertSql.Length--;
 
-                    using var command = new NpgsqlCommand(insertSql.ToString(), (NpgsqlConnection)connection);
-                    // Create a new batch of parameters for each iteration.
-                    command.Parameters.Clear();
-
-                    // Generate and insert data for each row in the batch.
-                    for (var rowIndex = startIndex; rowIndex < endIndex; rowIndex++)
-                    {
-                        foreach (var column in tableInfo.Columns)
-                        {
-                            if (!tableInfo.ColumnTypes.TryGetValue(column, out var dataType)) continue;
-                            if (!tableInfo.ColumnMaxLengths.TryGetValue(column, out var maxLength)) continue;
-                            object? value;
-                            if (tableInfo.ForeignKeyRelationships.TryGetValue(column, out var referencedColumn))
-                            {
-                                // Generate data for referencing column based on the referenced table.
-                                var referencedTable = referencedColumn[..referencedColumn.IndexOf('.')];
-                                var referencedTableIdColumn =
-                                    referencedColumn[(referencedColumn.IndexOf('.') + 1)..];
-                                var mapKey = $"{referencedTable}.{referencedTableIdColumn}";
-                                List<object> possibleValues;
-                                if (!referenceTableValueMap.ContainsKey(mapKey))
-                                {
-                                    possibleValues = GetAllPossibleValuesForReferencingColumn(connection,
-                                        ServerConfig.SchemaName,
-                                        referencedTable,
-                                        referencedTableIdColumn);
-                                    referenceTableValueMap[mapKey] = possibleValues;
-                                }
-                                else
-                                {
-                                    possibleValues = referenceTableValueMap[mapKey];
-                                }
-
-                                value = possibleValues[FakerUtility.Instance.Random.Int(0, possibleValues.Count - 1)];
-                            }
-                            else
-                            {
-                                if (column == primaryColumn && dataType.StartsWith("int"))
-                                {
-                                    value = ++lastRowId;
-                                }
-                                else if (column == primaryColumn && dataType.StartsWith("char"))
-                                {
-                                    value = Guid.NewGuid().ToString();
-                                }
-                                else
-                                {
-                                    value = GenerateRandomValue(dataType, column, maxLength,
-                                        tableConfig != null &&
-                                        tableConfig.ValidValues.TryGetValue(column, out var validVals)
-                                            ? validVals
-                                            : null);
-                                }
-                            }
-
-                            command.Parameters.AddWithValue($"@{column}{rowIndex}", GetNpgsqlDbType(dataType), value);
-                        }
-                    }
+                    AddParametersForEachBatch(connection, insertSql.ToString(), startIndex, endIndex, tableInfo,
+                        primaryColumn,
+                        referenceTableValueMap, ref lastRowId, tableConfig);
 
                     ReportProgress(batchSize, batches, batchIndex, totalRows);
-
-                    command.ExecuteNonQuery();
                 }
-                
+
                 Console.WriteLine();
 
                 // Re-enable foreign key constraints after data insertion.
@@ -207,7 +150,21 @@ namespace SQLDataGenerator.DataGenerators
             }
         }
 
-        protected override object? GenerateRandomValueBasedOnDataType(string postgresDataType, string columnName, int? maxLength)
+        protected override IDbDataParameter InsertStatementParameter(IDbCommand command, string column, string dataType,
+            int rowIndex, object? value)
+        {
+            var param = new NpgsqlParameter
+            {
+                ParameterName = $"@{column}{rowIndex}",
+                Value = value,
+                NpgsqlDbType = GetNpgsqlDbType(dataType)
+            };
+
+            return param;
+        }
+
+        protected override object? GenerateRandomValueBasedOnDataType(string postgresDataType, string columnName,
+            int? maxLength)
         {
             try
             {
@@ -241,7 +198,8 @@ namespace SQLDataGenerator.DataGenerators
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error occurred while generating random value for column {columnName} with data type {postgresDataType}:");
+                Console.WriteLine(
+                    $"Error occurred while generating random value for column {columnName} with data type {postgresDataType}:");
                 Console.WriteLine(ex.Message);
                 Console.WriteLine(ex.StackTrace);
                 return null;
@@ -413,13 +371,12 @@ namespace SQLDataGenerator.DataGenerators
             return result == DBNull.Value ? 1 : Convert.ToInt32(result);
         }
 
-        private static List<object> GetAllPossibleValuesForReferencingColumn(IDbConnection connection,
-            string schemaName,
+        protected override List<object> AllPossibleValuesForReferencingColumn(IDbConnection connection,
             string referencedTable, string referencedIdColumn)
         {
             using var command = connection.CreateCommand();
             command.CommandText =
-                $"SELECT {referencedIdColumn} FROM {schemaName}.{referencedTable} ORDER BY RANDOM() LIMIT 100";
+                $"SELECT {referencedIdColumn} FROM {ServerConfig.SchemaName}.{referencedTable} ORDER BY RANDOM() LIMIT 100";
 
             var result = new List<object>();
 
@@ -435,8 +392,8 @@ namespace SQLDataGenerator.DataGenerators
 
             return result;
         }
-        
-                private Dictionary<string, List<string>> GetPrimaryColumns(IDbConnection connection)
+
+        private Dictionary<string, List<string>> GetPrimaryColumns(IDbConnection connection)
         {
             var primaryColumnsMap = new Dictionary<string, List<string>>();
             using (var command = (NpgsqlCommand)connection.CreateCommand())
@@ -455,7 +412,7 @@ namespace SQLDataGenerator.DataGenerators
                         {
                             primaryColumnsMap[tableName] = new List<string>();
                         }
-                        
+
                         primaryColumnsMap[tableName].Add(primaryColumnName);
                     }
                 }
@@ -467,7 +424,7 @@ namespace SQLDataGenerator.DataGenerators
         private Dictionary<string, Dictionary<string, string>> GetForeignKeyRelationshipsMap(IDbConnection connection)
         {
             var foreignKeyMap = new Dictionary<string, Dictionary<string, string>>();
-            
+
             // Retrieve foreign key relationships for the current table.
             using (var command = (NpgsqlCommand)connection.CreateCommand())
             {
@@ -502,7 +459,7 @@ namespace SQLDataGenerator.DataGenerators
         private Dictionary<string, TableInfo> PopulateTableInfoWithBasicData(IDbConnection connection)
         {
             var tableInfoMap = new Dictionary<string, TableInfo>();
-            
+
             using (var command = (NpgsqlCommand)connection.CreateCommand())
             {
                 command.CommandText = PostgreSqlServerConstants.GetTableColumnsQuery;
@@ -518,7 +475,7 @@ namespace SQLDataGenerator.DataGenerators
                         {
                             tableInfoMap[tableName] = new TableInfo();
                         }
-                        
+
                         var columnName = reader.GetString(1);
                         var dataType = reader.GetString(2);
                         int? maxLength = reader.GetValue(3) == DBNull.Value ? null : reader.GetInt32(3);

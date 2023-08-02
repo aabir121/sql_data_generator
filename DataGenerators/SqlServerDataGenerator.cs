@@ -43,7 +43,7 @@ namespace SQLDataGenerator.DataGenerators
         private Dictionary<string, TableInfo> PopulateBasicTableInfoMap(IDbConnection connection)
         {
             var tableInfoMap = new Dictionary<string, TableInfo>();
-            
+
             // Retrieve column names and data types for the current table.
             using (var command = connection.CreateCommand())
             {
@@ -60,7 +60,7 @@ namespace SQLDataGenerator.DataGenerators
                         {
                             tableInfoMap[tableName] = new TableInfo();
                         }
-                        
+
                         var columnName = reader.GetString(1);
                         var dataType = reader.GetString(2);
                         int? maxLength = reader.GetValue(3) == DBNull.Value ? null : reader.GetInt32(3);
@@ -82,7 +82,8 @@ namespace SQLDataGenerator.DataGenerators
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = SqlServerConstants.GetForeignKeyRelationshipsQuery;
-                command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar) { Value = ServerConfig.SchemaName });
+                command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar)
+                    { Value = ServerConfig.SchemaName });
 
                 using (var reader = command.ExecuteReader())
                 {
@@ -93,7 +94,7 @@ namespace SQLDataGenerator.DataGenerators
                         {
                             foreignKeyRelationMap[tableName] = new Dictionary<string, string>();
                         }
-                        
+
                         var columnName = reader.GetString(1);
                         var referencedTableName = reader.GetString(2);
                         var referencedColumnName = reader.GetString(3);
@@ -115,7 +116,8 @@ namespace SQLDataGenerator.DataGenerators
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = SqlServerConstants.GetPrimaryColumnsQuery;
-                command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar) { Value = ServerConfig.SchemaName });
+                command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar)
+                    { Value = ServerConfig.SchemaName });
 
                 using (var reader = command.ExecuteReader())
                 {
@@ -128,7 +130,7 @@ namespace SQLDataGenerator.DataGenerators
                         }
 
                         var columnName = reader.GetString(1);
-                        
+
                         pkMap[tableName].Add(columnName);
                     }
                 }
@@ -145,7 +147,7 @@ namespace SQLDataGenerator.DataGenerators
             var tableInfoMap = PopulateBasicTableInfoMap(connection);
             var foreignKeyRelationMap = PopulateForeignKeyRelationsMap(connection);
             var pkMap = PopulatePrimaryColumnsMap(connection);
-            
+
             foreach (var tableName in tableNames)
             {
                 if (!tableInfoMap.TryGetValue(tableName, out var tableInfo))
@@ -162,7 +164,7 @@ namespace SQLDataGenerator.DataGenerators
                 {
                     tableInfo.PrimaryColumns = pkColumns;
                 }
-                
+
                 tableData.Add(tableName, tableInfo);
             }
 
@@ -187,7 +189,7 @@ namespace SQLDataGenerator.DataGenerators
                 var lastRowId = primaryDataType.StartsWith("int")
                     ? GetLastIdForIntegerPrimaryColumn(connection, ServerConfig.SchemaName, tableName, primaryColumn)
                     : null;
-                
+
                 // Generate and insert data in batches.
                 var batchSize = GetAchievableBatchSize(tableInfo.Columns.Count); // Set the desired batch size.
                 var totalRows = GetNumberOfRowsToInsert(tableConfig);
@@ -201,7 +203,7 @@ namespace SQLDataGenerator.DataGenerators
                     var startIndex = batchIndex * batchSize;
                     var endIndex = Math.Min(startIndex + batchSize, totalRows);
                     // Console.WriteLine(
-                        // $"Preparing Insert statements for {tableName} and for row number {startIndex} till {endIndex}");
+                    // $"Preparing Insert statements for {tableName} and for row number {startIndex} till {endIndex}");
 
                     var insertSql =
                         new StringBuilder(
@@ -214,71 +216,13 @@ namespace SQLDataGenerator.DataGenerators
 
                     insertSql.Length--;
 
-                    using var command = new SqlCommand(insertSql.ToString(), (SqlConnection)connection);
-                    // Create a new batch of parameters for each iteration.
-                    command.Parameters.Clear();
+                    AddParametersForEachBatch(connection, insertSql.ToString(), startIndex, endIndex, tableInfo,
+                        primaryColumn,
+                        referenceTableValueMap, ref lastRowId, tableConfig);
 
-                    // Generate and insert data for each row in the batch.
-                    for (var rowIndex = startIndex; rowIndex < endIndex; rowIndex++)
-                    {
-                        foreach (var column in tableInfo.Columns)
-                        {
-                            if (!tableInfo.ColumnTypes.TryGetValue(column, out var dataType)) continue;
-                            if (!tableInfo.ColumnMaxLengths.TryGetValue(column, out var maxLength)) continue;
-
-                            object? value;
-                            if (tableInfo.ForeignKeyRelationships.TryGetValue(column, out var referencedColumn))
-                            {
-                                // Generate data for referencing column based on the referenced table.
-                                var referencedTable = referencedColumn[..referencedColumn.IndexOf('.')];
-                                var referencedTableIdColumn =
-                                    referencedColumn[(referencedColumn.IndexOf('.') + 1)..];
-                                var mapKey = $"{referencedTable}.{referencedTableIdColumn}";
-                                List<object> possibleValues;
-                                if (!referenceTableValueMap.ContainsKey(mapKey))
-                                {
-                                    possibleValues = GetAllPossibleValuesForReferencingColumn(connection,
-                                        ServerConfig.SchemaName,
-                                        referencedTable,
-                                        referencedTableIdColumn);
-                                    referenceTableValueMap[mapKey] = possibleValues;
-                                }
-                                else
-                                {
-                                    possibleValues = referenceTableValueMap[mapKey];
-                                }
-
-                                
-                                value = possibleValues[FakerUtility.Instance.Random.Int(0, possibleValues.Count - 1)];
-                            }
-                            else
-                            {
-                                if (column == primaryColumn && dataType.StartsWith("int"))
-                                {
-                                    value = ++lastRowId;
-                                }
-                                else if (column == primaryColumn && dataType.StartsWith("char"))
-                                {
-                                    value = Guid.NewGuid().ToString();
-                                }
-                                else
-                                {
-                                    value = GenerateRandomValue(dataType, column, maxLength,
-                                        tableConfig != null &&
-                                        tableConfig.ValidValues.TryGetValue(column, out var validVals)
-                                            ? validVals
-                                            : null);
-                                }
-                            }
-
-                            command.Parameters.AddWithValue($"@{column}{rowIndex}", value);
-                        }
-                    }
-                    
                     ReportProgress(batchSize, batches, batchIndex, totalRows);
-                    command.ExecuteNonQuery();
                 }
-                
+
                 Console.WriteLine();
 
                 // Re-enable foreign key constraints after data insertion.
@@ -305,13 +249,12 @@ namespace SQLDataGenerator.DataGenerators
             return result == DBNull.Value ? 1 : Convert.ToInt32(result);
         }
 
-        private static List<object> GetAllPossibleValuesForReferencingColumn(IDbConnection connection,
-            string schemaName,
+        protected override List<object> AllPossibleValuesForReferencingColumn(IDbConnection connection,
             string referencedTable, string referencedIdColumn)
         {
             using var command = connection.CreateCommand();
             command.CommandText =
-                $"SELECT TOP 100 {referencedIdColumn} FROM {schemaName}.{referencedTable} ORDER BY NEWID()";
+                $"SELECT TOP 100 {referencedIdColumn} FROM {ServerConfig.SchemaName}.{referencedTable} ORDER BY NEWID()";
 
             var result = new List<object>();
 
@@ -362,7 +305,8 @@ namespace SQLDataGenerator.DataGenerators
             }
         }
 
-        protected override object? GenerateRandomValueBasedOnDataType(string dataType, string columnName, int? maxLength)
+        protected override object? GenerateRandomValueBasedOnDataType(string dataType, string columnName,
+            int? maxLength)
         {
             try
             {
@@ -397,7 +341,8 @@ namespace SQLDataGenerator.DataGenerators
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error occurred while generating random value for column {columnName} with data type {dataType}:");
+                Console.WriteLine(
+                    $"Error occurred while generating random value for column {columnName} with data type {dataType}:");
                 Console.WriteLine(ex.Message);
                 Console.WriteLine(ex.StackTrace);
                 return null;
