@@ -1,5 +1,4 @@
 using System.Data;
-using System.Text;
 using MySql.Data.MySqlClient;
 using SQLDataGenerator.Constants;
 using SQLDataGenerator.Helpers;
@@ -21,11 +20,11 @@ public class MySqlDataGenerator : DataGenerator
                                    $"database={ServerConfig.DatabaseName}");
     }
 
-    protected override List<string> GetTableNames(IDbConnection connection)
+    protected override List<string?> GetTableNames()
     {
-        var tableNames = GetTableNames((MySqlConnection)connection);
+        var tableNames = GetAllTableNames();
         var (graph, indegree) = InitTableGraph(tableNames);
-        PopulateTableGraphAndIndegree((MySqlConnection)connection, tableNames, graph, indegree);
+        PopulateTableGraphAndIndegree(graph, indegree);
 
         // Perform topological sort
         var result = new List<string>();
@@ -49,12 +48,12 @@ public class MySqlDataGenerator : DataGenerator
         return result;
     }
 
-    protected override Dictionary<string, TableInfo> GetTableData(IDbConnection connection, List<string> tableNames)
+    protected override Dictionary<string, TableInfo> GetTableData(List<string> tableNames)
     {
         var tableData = new Dictionary<string, TableInfo>();
 
-        var tableDepMap = PopulateTableDepMap(connection);
-        var tableInfoMap = PopulateBasicTableInfoMap(connection);
+        var tableDepMap = PopulateTableDepMap();
+        var tableInfoMap = PopulateBasicTableInfoMap();
 
         // Retrieve column names and data types for each table
         foreach (var tableName in tableNames)
@@ -75,12 +74,12 @@ public class MySqlDataGenerator : DataGenerator
         return tableData;
     }
 
-    protected override void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo,
+    protected override void InsertDataIntoTable(string tableName, TableInfo tableInfo,
         TableConfig? tableConfig)
     {
         try
         {
-            DisableForeignKeyCheck(connection);
+            DisableForeignKeyCheck();
 
             var primaryColumn = tableInfo.PrimaryColumns[0]; // Assuming the first column is the primary key column.
             if (!tableInfo.ColumnTypes.TryGetValue(primaryColumn, out var primaryDataType))
@@ -89,13 +88,12 @@ public class MySqlDataGenerator : DataGenerator
             }
 
             var lastRowId = primaryDataType.StartsWith("int")
-                ? GetLastIdForIntegerPrimaryColumn(connection, tableName, primaryColumn)
+                ? GetLastIdForIntegerPrimaryColumn(tableName, primaryColumn)
                 : null;
 
             // Generate and insert data in batches.
             var batchSize = GetAchievableBatchSize(tableInfo.Columns.Count); // Set the desired batch size.
             var totalRows = GetNumberOfRowsToInsert(tableConfig);
-            // Console.WriteLine($"Starting to insert {totalRows} rows for {tableName} with batch size {batchSize}");
 
             var batches = (totalRows + batchSize - 1) / batchSize; // Calculate the number of batches.
             var referenceTableValueMap = new Dictionary<string, List<object>>();
@@ -104,20 +102,16 @@ public class MySqlDataGenerator : DataGenerator
             {
                 var startIndex = batchIndex * batchSize;
                 var endIndex = Math.Min(startIndex + batchSize, totalRows);
-                var insertSql =
-                    new StringBuilder(
-                        $"INSERT INTO {tableName} ({string.Join(", ", tableInfo.Columns)}) VALUES ");
 
-                for (var i = startIndex; i < endIndex; i++)
-                {
-                    insertSql.Append($"({GetParamPlaceholders(tableInfo.Columns, i)}),");
-                }
+                var queryBuilder = new InsertQueryBuilder();
+                queryBuilder.InsertInto($"{tableName}")
+                    .Columns(tableInfo.Columns)
+                    .ParamPlaceholders(startIndex, endIndex, tableInfo.Columns);
 
-                insertSql.Length--;
-
-                AddParametersForEachBatch(connection, insertSql.ToString(), startIndex, endIndex, tableInfo,
-                    primaryColumn,
+                var commandParams = GetParameters<MySqlParameter>(startIndex, endIndex, tableInfo,
                     referenceTableValueMap, ref lastRowId, tableConfig);
+
+                ExecuteNonQueryCommand(queryBuilder.Build(), commandParams);
 
                 ReportProgress(batchSize, batches, batchIndex, totalRows);
             }
@@ -125,7 +119,7 @@ public class MySqlDataGenerator : DataGenerator
             Console.WriteLine();
 
             // Re-enable foreign key constraints after data insertion.
-            EnableForeignKeyCheck(connection);
+            EnableForeignKeyCheck();
 
             RowsInsertedMap[tableName] = totalRows;
         }
@@ -172,13 +166,11 @@ public class MySqlDataGenerator : DataGenerator
         }
     }
 
-    protected virtual void DisableForeignKeyCheck(IDbConnection connection)
+    private void DisableForeignKeyCheck()
     {
         try
         {
-            using var command = connection.CreateCommand();
-            command.CommandText = MySqlServerConstants.DisableForeignKeyCheckQuery;
-            command.ExecuteNonQuery();
+            ExecuteNonQueryCommand(MySqlServerConstants.DisableForeignKeyCheckQuery, new List<IDbDataParameter>());
             Console.WriteLine("Foreign key check constraint disabled.");
         }
         catch (Exception ex)
@@ -189,13 +181,11 @@ public class MySqlDataGenerator : DataGenerator
         }
     }
 
-    protected virtual void EnableForeignKeyCheck(IDbConnection connection)
+    private void EnableForeignKeyCheck()
     {
         try
         {
-            using var command = connection.CreateCommand();
-            command.CommandText = MySqlServerConstants.EnableForeignKeyCheckQuery;
-            command.ExecuteNonQuery();
+            ExecuteNonQueryCommand(MySqlServerConstants.EnableForeignKeyCheckQuery, new List<IDbDataParameter>());
             Console.WriteLine("Foreign key check constraint enabled.");
         }
         catch (Exception ex)
@@ -206,10 +196,10 @@ public class MySqlDataGenerator : DataGenerator
         }
     }
 
-    private static HashSet<string> GetTableNames(MySqlConnection connection)
+    private HashSet<string> GetAllTableNames()
     {
         var tableNames = new HashSet<string>();
-        using var command = connection.CreateCommand();
+        using var command = Connection.CreateCommand();
         command.CommandText = MySqlServerConstants.GetTableNamesQuery;
 
         using var reader = command.ExecuteReader();
@@ -236,13 +226,12 @@ public class MySqlDataGenerator : DataGenerator
         return (graph, indegree);
     }
 
-    private void PopulateTableGraphAndIndegree(MySqlConnection connection, HashSet<string> tableNames,
-        IDictionary<string, List<string>> graph,
+    private void PopulateTableGraphAndIndegree(IDictionary<string, List<string>> graph,
         IDictionary<string, int> indegree)
     {
-        using var command = connection.CreateCommand();
+        using var command = Connection.CreateCommand();
         command.CommandText = MySqlServerConstants.GetDependencyQuery;
-        command.Parameters.AddWithValue("@DatabaseName", ServerConfig.DatabaseName);
+        command.Parameters.Add(new MySqlParameter("@DatabaseName", ServerConfig.DatabaseName));
 
         using var reader = command.ExecuteReader();
         while (reader.Read())
@@ -260,10 +249,10 @@ public class MySqlDataGenerator : DataGenerator
         }
     }
 
-    private static int? GetLastIdForIntegerPrimaryColumn(IDbConnection connection, string tableName,
+    private int? GetLastIdForIntegerPrimaryColumn(string tableName,
         string primaryColumnName)
     {
-        using var command = connection.CreateCommand();
+        using var command = Connection.CreateCommand();
         command.CommandText =
             $"select {primaryColumnName} from {tableName} ORDER BY {primaryColumnName} DESC LIMIT 1;";
 
@@ -271,10 +260,10 @@ public class MySqlDataGenerator : DataGenerator
         return result == DBNull.Value ? 1 : Convert.ToInt32(result);
     }
 
-    protected override List<object> AllPossibleValuesForReferencingColumn(IDbConnection connection,
-        string referencedTable, string referencedIdColumn)
+    protected override List<object?> AllPossibleValuesForReferencingColumn(string referencedTable,
+        string referencedIdColumn)
     {
-        using var command = connection.CreateCommand();
+        using var command = Connection.CreateCommand();
         command.CommandText =
             $"SELECT {referencedIdColumn} FROM {referencedTable} ORDER BY RAND() LIMIT 100";
 
@@ -293,12 +282,12 @@ public class MySqlDataGenerator : DataGenerator
         return result;
     }
 
-    private Dictionary<string, Dictionary<string, string>> PopulateTableDepMap(IDbConnection connection)
+    private Dictionary<string, Dictionary<string, string>> PopulateTableDepMap()
     {
         var tableDepMap = new Dictionary<string, Dictionary<string, string>>();
 
         // Retrieve foreign key relationships for the current table.
-        using (var command = (MySqlCommand)connection.CreateCommand())
+        using (var command = (MySqlCommand)Connection.CreateCommand())
         {
             command.CommandText = MySqlServerConstants.GetDependencyQuery;
             command.Parameters.AddWithValue("@DatabaseName", ServerConfig.DatabaseName);
@@ -324,11 +313,11 @@ public class MySqlDataGenerator : DataGenerator
         return tableDepMap;
     }
 
-    private Dictionary<string, TableInfo> PopulateBasicTableInfoMap(IDbConnection connection)
+    private Dictionary<string, TableInfo> PopulateBasicTableInfoMap()
     {
         var tableInfoMap = new Dictionary<string, TableInfo>();
 
-        using (var command = (MySqlCommand)connection.CreateCommand())
+        using (var command = (MySqlCommand)Connection.CreateCommand())
         {
             command.CommandText = MySqlServerConstants.GetColumnsQuery;
             command.Parameters.AddWithValue("@DatabaseName", ServerConfig.DatabaseName);

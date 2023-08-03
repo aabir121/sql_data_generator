@@ -7,6 +7,7 @@ namespace SQLDataGenerator.DataGenerators
 {
     public abstract class DataGenerator
     {
+        protected IDbConnection Connection;
         protected readonly ServerConfiguration ServerConfig;
         protected readonly Dictionary<string, int> RowsInsertedMap;
         private readonly CommonSettings _commonSettings;
@@ -29,15 +30,16 @@ namespace SQLDataGenerator.DataGenerators
             try
             {
                 _startTime = DateTime.Now;
-                using var connection = GetDbConnection();
-                connection.Open();
+                Connection = GetDbConnection();
+
+                Connection.Open();
                 Console.WriteLine("Connected to the database server.");
 
-                var tableNames = GetTableNames(connection);
-                var tableData = GetTableData(connection, tableNames);
+                var tableNames = GetTableNames();
+                var tableData = GetTableData(tableNames);
                 var tableConfigsMap = CreateTableConfigMap();
 
-                GenerateAndInsertData(connection, tableNames, tableData, tableConfigsMap);
+                GenerateAndInsertData(tableNames, tableData, tableConfigsMap);
 
                 Console.WriteLine("Data generation completed successfully.");
 
@@ -53,7 +55,6 @@ namespace SQLDataGenerator.DataGenerators
 
         protected static void ReportProgress(int batchSize, int batches, int batchIndex, int totalRows)
         {
-            Console.SetCursorPosition(0, Console.CursorTop); // Move the cursor to the start of the line.
             var progress = (float)(batchIndex + 1) / batches * 100;
             var remainingRows = Math.Max(0, totalRows - (batchIndex + 1) * batchSize);
 
@@ -102,7 +103,7 @@ namespace SQLDataGenerator.DataGenerators
             return tableConfigsMap;
         }
 
-        private void GenerateAndInsertData(IDbConnection connection, List<string> tableNames,
+        private void GenerateAndInsertData(List<string> tableNames,
             IReadOnlyDictionary<string, TableInfo> tableData, IReadOnlyDictionary<string, TableConfig> tableConfigsMap)
         {
             var tableNamesToWorkWith = FilterBasedOnSettings(tableNames);
@@ -118,7 +119,7 @@ namespace SQLDataGenerator.DataGenerators
                 Console.WriteLine("--------------------------------------");
                 Console.WriteLine($"Generating data for Table {currentTable}/{totalTables}: {tableName}");
 
-                InsertDataIntoTable(connection, tableName, tableInfo, tableConfig);
+                InsertDataIntoTable(tableName, tableInfo, tableConfig);
 
                 Console.WriteLine($"Data generation for Table {currentTable}/{totalTables}: {tableName} completed.");
                 Console.WriteLine("--------------------------------------");
@@ -141,12 +142,12 @@ namespace SQLDataGenerator.DataGenerators
 
         protected abstract IDbConnection GetDbConnection();
 
-        protected abstract List<string> GetTableNames(IDbConnection connection);
+        protected abstract List<string?> GetTableNames();
 
         protected abstract Dictionary<string, TableInfo>
-            GetTableData(IDbConnection connection, List<string> tableNames);
+            GetTableData(List<string> tableNames);
 
-        protected abstract void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo,
+        protected abstract void InsertDataIntoTable(string tableName, TableInfo tableInfo,
             TableConfig? tableConfig);
 
         protected static string GetParamPlaceholders(IEnumerable<string> columns, int rowIdx)
@@ -155,7 +156,7 @@ namespace SQLDataGenerator.DataGenerators
             return string.Join(", ", placeholders);
         }
 
-        protected object? GenerateRandomValue(string dataType, string columnName, int? maxLength,
+        private object? GenerateRandomValue(string dataType, string columnName, int? maxLength,
             List<object>? tableConfigValidValues)
         {
             return tableConfigValidValues != null
@@ -202,13 +203,10 @@ namespace SQLDataGenerator.DataGenerators
             }
 
             return GenerateRandomValue(dataType, column, maxLength,
-                tableConfig != null &&
-                tableConfig.ValidValues.TryGetValue(column, out var validValues)
-                    ? validValues
-                    : null);
+                tableConfig?.ValidValues?.GetValueOrDefault(column));
         }
 
-        private object GenerateDataForReferenceColumn(IDbConnection connection, string referencedColumn,
+        private object GenerateDataForReferenceColumn(string referencedColumn,
             IDictionary<string, List<object>> referenceTableValueMap)
         {
             var referencedTable = referencedColumn[..referencedColumn.IndexOf('.')];
@@ -218,7 +216,7 @@ namespace SQLDataGenerator.DataGenerators
             List<object> possibleValues;
             if (!referenceTableValueMap.ContainsKey(mapKey))
             {
-                possibleValues = AllPossibleValuesForReferencingColumn(connection, referencedTable,
+                possibleValues = AllPossibleValuesForReferencingColumn(referencedTable,
                     referencedTableIdColumn);
                 referenceTableValueMap[mapKey] = possibleValues;
             }
@@ -230,64 +228,120 @@ namespace SQLDataGenerator.DataGenerators
             return possibleValues[FakerUtility.Instance.Random.Int(0, possibleValues.Count - 1)];
         }
 
-        protected object? GenerateRandomValueForColumn(IDbConnection connection, TableInfo tableInfo, string column,
-            string dataType,
-            string primaryColumn, Dictionary<string, List<object>> referenceTableValueMap, ref int? lastRowId,
+        private object? GenerateRandomValueForColumn(TableInfo tableInfo, string column,
+            string dataType, Dictionary<string, List<object>> referenceTableValueMap, ref int? lastRowId,
             TableConfig? tableConfig, int? maxLength)
         {
             if (tableInfo.ForeignKeyRelationships.TryGetValue(column, out var referencedColumn))
             {
-                return GenerateDataForReferenceColumn(connection, referencedColumn,
+                return GenerateDataForReferenceColumn(referencedColumn,
                     referenceTableValueMap);
             }
 
+            var primaryColumn = tableInfo.PrimaryColumns[0];
             return GenerateRandomValueForRegularColumn(column, primaryColumn, dataType, maxLength, ref lastRowId,
                 tableConfig);
         }
 
-        protected void AddParametersForEachBatch(IDbConnection connection, string queryString, int startIndex,
-            int endIndex, TableInfo tableInfo,
-            string primaryColumn, Dictionary<string, List<object>> referenceTableValueMap, ref int? lastRowId,
-            TableConfig? tableConfig)
+        protected List<IDbDataParameter> GetParameters<TParameter>(int startIndex,
+            int endIndex, TableInfo tableInfo, Dictionary<string, List<object>> referenceTableValueMap,
+            ref int? lastRowId,
+            TableConfig? tableConfig) where TParameter : IDbDataParameter, new()
         {
-            using (var command = connection.CreateCommand())
+            var commandParams = new List<IDbDataParameter>();
+            for (var rowIndex = startIndex; rowIndex < endIndex; rowIndex++)
+            {
+                foreach (var column in tableInfo.Columns)
+                {
+                    if (!tableInfo.ColumnTypes.TryGetValue(column, out var dataType)) continue;
+                    if (!tableInfo.ColumnMaxLengths.TryGetValue(column, out var maxLength)) continue;
+
+                    var randomValue = GenerateRandomValueForColumn(tableInfo, column, dataType,
+                        referenceTableValueMap, ref lastRowId, tableConfig, maxLength);
+
+                    commandParams.Add(InsertStatementParameter<TParameter>(column, rowIndex, randomValue));
+                }
+            }
+
+            return commandParams;
+        }
+
+        protected T? GetDataFromRow<T>(Dictionary<string, object> row, string key)
+        {
+            if (!row.ContainsKey(key))
+            {
+                return default(T);
+            }
+
+            var value = row[key];
+            if (value == DBNull.Value)
+            {
+                return default(T);
+            }
+
+            return (T)Convert.ChangeType(value, typeof(T));
+        }
+
+        protected void ExecuteNonQueryCommand(string queryString,
+            List<IDbDataParameter> commandParams)
+        {
+            using (var command = Connection.CreateCommand())
             {
                 command.CommandText = queryString;
-                // Create a new batch of parameters for each iteration.
-                command.Parameters.Clear();
-
-                // Generate and insert data for each row in the batch.
-                for (var rowIndex = startIndex; rowIndex < endIndex; rowIndex++)
+                foreach (var dbDataParameter in commandParams)
                 {
-                    foreach (var column in tableInfo.Columns)
-                    {
-                        if (!tableInfo.ColumnTypes.TryGetValue(column, out var dataType)) continue;
-                        if (!tableInfo.ColumnMaxLengths.TryGetValue(column, out var maxLength)) continue;
-
-                        var randomValue = GenerateRandomValueForColumn(connection, tableInfo, column, dataType,
-                            primaryColumn, referenceTableValueMap, ref lastRowId, tableConfig, maxLength);
-
-                        command.Parameters.Add(InsertStatementParameter(command, column, dataType,
-                            rowIndex, randomValue));
-                    }
+                    command.Parameters.Add(dbDataParameter);
                 }
 
                 command.ExecuteNonQuery();
             }
         }
 
-        protected virtual IDbDataParameter InsertStatementParameter(IDbCommand command, string column, string dataType,
-            int rowIndex, object? value)
+        protected List<Dictionary<string, object>> ExecuteSqlQuery(string query, List<IDbDataParameter> commandParams)
         {
-            var param = command.CreateParameter();
-            param.ParameterName = $"@{column}{rowIndex}";
-            param.Value = value;
+            var result = new List<Dictionary<string, object>>();
+
+            using (var command = Connection.CreateCommand())
+            {
+                command.CommandText = query;
+
+                foreach (var dbDataParameter in commandParams)
+                {
+                    command.Parameters.Add(dbDataParameter);
+                }
+
+                using var reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    var row = new Dictionary<string, object>();
+
+                    for (var i = 0; i < reader.FieldCount; i++)
+                    {
+                        var columnName = reader.GetName(i);
+                        var value = reader[i];
+                        row[columnName] = value;
+                    }
+
+                    result.Add(row);
+                }
+            }
+
+            return result;
+        }
+
+        private IDbDataParameter InsertStatementParameter<TParameter>(string column, int rowIndex, object? value)
+            where TParameter : IDbDataParameter, new()
+        {
+            var param = new TParameter
+            {
+                ParameterName = $"@{column}{rowIndex}",
+                Value = value
+            };
 
             return param;
         }
 
-        protected abstract List<object> AllPossibleValuesForReferencingColumn(IDbConnection connection,
-            string referencedTable,
+        protected abstract List<object?> AllPossibleValuesForReferencingColumn(string referencedTable,
             string referencedTableIdColumn);
     }
 }

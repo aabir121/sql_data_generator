@@ -1,5 +1,4 @@
 using System.Data;
-using System.Text;
 using Npgsql;
 using NpgsqlTypes;
 using SQLDataGenerator.Constants;
@@ -23,11 +22,11 @@ namespace SQLDataGenerator.DataGenerators
                                         $"Database={ServerConfig.DatabaseName};Username={ServerConfig.Username};Password={ServerConfig.Password};");
         }
 
-        protected override List<string> GetTableNames(IDbConnection connection)
+        protected override List<string?> GetTableNames()
         {
-            var tableNames = GetTableNames((NpgsqlConnection)connection);
+            var tableNames = GetAllTableNames();
             var (graph, indegree) = InitTableGraph(tableNames);
-            PopulateTableGraphAndIndegree((NpgsqlConnection)connection, tableNames, graph, indegree);
+            PopulateTableGraphAndIndegree(tableNames, graph, indegree);
 
             // Perform topological sort
             var result = new List<string>();
@@ -51,13 +50,13 @@ namespace SQLDataGenerator.DataGenerators
             return result;
         }
 
-        protected override Dictionary<string, TableInfo> GetTableData(IDbConnection connection, List<string> tableNames)
+        protected override Dictionary<string, TableInfo> GetTableData(List<string> tableNames)
         {
             var tableData = new Dictionary<string, TableInfo>();
 
-            var primaryColumnsMap = GetPrimaryColumns(connection);
-            var foreignKeyMap = GetForeignKeyRelationshipsMap(connection);
-            var tableInfoMap = PopulateTableInfoWithBasicData(connection);
+            var primaryColumnsMap = GetPrimaryColumns();
+            var foreignKeyMap = GetForeignKeyRelationshipsMap();
+            var tableInfoMap = PopulateTableInfoWithBasicData();
 
             // Retrieve column names and data types for each table
             foreach (var tableName in tableNames)
@@ -83,13 +82,13 @@ namespace SQLDataGenerator.DataGenerators
             return tableData;
         }
 
-        protected override void InsertDataIntoTable(IDbConnection connection, string tableName, TableInfo tableInfo,
+        protected override void InsertDataIntoTable(string tableName, TableInfo tableInfo,
             TableConfig? tableConfig)
         {
             try
             {
                 // Disable foreign key constraints before inserting data.
-                DisableForeignKeyCheck(connection);
+                DisableForeignKeyCheck();
 
                 var primaryColumn = tableInfo.PrimaryColumns[0]; // Assuming the first column is the primary key column.
                 if (!tableInfo.ColumnTypes.TryGetValue(primaryColumn, out var primaryDataType))
@@ -98,7 +97,7 @@ namespace SQLDataGenerator.DataGenerators
                 }
 
                 var lastRowId = primaryDataType.StartsWith("int")
-                    ? GetLastIdForIntegerPrimaryColumn(connection, ServerConfig.SchemaName, tableName, primaryColumn)
+                    ? GetLastIdForIntegerPrimaryColumn(ServerConfig.SchemaName, tableName, primaryColumn)
                     : null;
 
 
@@ -114,23 +113,16 @@ namespace SQLDataGenerator.DataGenerators
                 {
                     var startIndex = batchIndex * batchSize;
                     var endIndex = Math.Min(startIndex + batchSize, totalRows);
-                    // Console.WriteLine(
-                    //     $"Preparing Insert statements for {tableName} and for row number {startIndex} till {endIndex}");
 
-                    var insertSql =
-                        new StringBuilder(
-                            $"INSERT INTO {ServerConfig.SchemaName}.{tableName} ({string.Join(", ", tableInfo.Columns)}) VALUES ");
+                    var queryBuilder = new InsertQueryBuilder();
+                    queryBuilder.InsertInto($"{ServerConfig.SchemaName}.{tableName}")
+                        .Columns(tableInfo.Columns)
+                        .ParamPlaceholders(startIndex, endIndex, tableInfo.Columns);
 
-                    for (var i = startIndex; i < endIndex; i++)
-                    {
-                        insertSql.Append($"({GetParamPlaceholders(tableInfo.Columns, i)}),");
-                    }
+                    var commandParams = GetParameters<NpgsqlParameter>(startIndex, endIndex,
+                        tableInfo, referenceTableValueMap, ref lastRowId, tableConfig);
 
-                    insertSql.Length--;
-
-                    AddParametersForEachBatch(connection, insertSql.ToString(), startIndex, endIndex, tableInfo,
-                        primaryColumn,
-                        referenceTableValueMap, ref lastRowId, tableConfig);
+                    ExecuteNonQueryCommand(queryBuilder.Build(), commandParams);
 
                     ReportProgress(batchSize, batches, batchIndex, totalRows);
                 }
@@ -138,7 +130,7 @@ namespace SQLDataGenerator.DataGenerators
                 Console.WriteLine();
 
                 // Re-enable foreign key constraints after data insertion.
-                EnableForeignKeyCheck((NpgsqlConnection)connection);
+                EnableForeignKeyCheck();
 
                 RowsInsertedMap[tableName] = totalRows;
             }
@@ -148,19 +140,6 @@ namespace SQLDataGenerator.DataGenerators
                 Console.WriteLine(ex.Message);
                 Console.WriteLine(ex.StackTrace);
             }
-        }
-
-        protected override IDbDataParameter InsertStatementParameter(IDbCommand command, string column, string dataType,
-            int rowIndex, object? value)
-        {
-            var param = new NpgsqlParameter
-            {
-                ParameterName = $"@{column}{rowIndex}",
-                Value = value,
-                NpgsqlDbType = GetNpgsqlDbType(dataType)
-            };
-
-            return param;
         }
 
         protected override object? GenerateRandomValueBasedOnDataType(string postgresDataType, string columnName,
@@ -206,13 +185,12 @@ namespace SQLDataGenerator.DataGenerators
             }
         }
 
-        protected virtual void DisableForeignKeyCheck(IDbConnection connection)
+        private void DisableForeignKeyCheck()
         {
             try
             {
-                using var command = connection.CreateCommand();
-                command.CommandText = PostgreSqlServerConstants.DisableForeignKeyCheckQuery;
-                command.ExecuteNonQuery();
+                ExecuteNonQueryCommand(PostgreSqlServerConstants.DisableForeignKeyCheckQuery,
+                    new List<IDbDataParameter>());
                 Console.WriteLine("Foreign key check constraint disabled.");
             }
             catch (Exception ex)
@@ -223,13 +201,12 @@ namespace SQLDataGenerator.DataGenerators
             }
         }
 
-        protected virtual void EnableForeignKeyCheck(IDbConnection connection)
+        private void EnableForeignKeyCheck()
         {
             try
             {
-                using var command = connection.CreateCommand();
-                command.CommandText = PostgreSqlServerConstants.EnableForeignKeyCheckQuery;
-                command.ExecuteNonQuery();
+                ExecuteNonQueryCommand(PostgreSqlServerConstants.EnableForeignKeyCheckQuery,
+                    new List<IDbDataParameter>());
                 Console.WriteLine("Foreign key check constraint enabled.");
             }
             catch (Exception ex)
@@ -240,12 +217,12 @@ namespace SQLDataGenerator.DataGenerators
             }
         }
 
-        private HashSet<string> GetTableNames(NpgsqlConnection connection)
+        private HashSet<string> GetAllTableNames()
         {
             var tableNames = new HashSet<string>();
-            using var command = connection.CreateCommand();
+            using var command = Connection.CreateCommand();
             command.CommandText = PostgreSqlServerConstants.GetTableNamesQuery;
-            command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
+            command.Parameters.Add(new NpgsqlParameter("@SchemaName", ServerConfig.SchemaName));
 
             using var reader = command.ExecuteReader();
             while (reader.Read())
@@ -292,13 +269,13 @@ namespace SQLDataGenerator.DataGenerators
             return longestPrefix;
         }
 
-        private void PopulateTableGraphAndIndegree(NpgsqlConnection connection, HashSet<string> tableNames,
+        private void PopulateTableGraphAndIndegree(HashSet<string> tableNames,
             IDictionary<string, List<string>> graph,
             IDictionary<string, int> indegree)
         {
-            using var command = connection.CreateCommand();
+            using var command = Connection.CreateCommand();
             command.CommandText = PostgreSqlServerConstants.GetForeignKeyConstraintsQuery;
-            command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
+            command.Parameters.Add(new NpgsqlParameter("@SchemaName", ServerConfig.SchemaName));
 
             using var reader = command.ExecuteReader();
             while (reader.Read())
@@ -360,10 +337,10 @@ namespace SQLDataGenerator.DataGenerators
             }
         }
 
-        private static int? GetLastIdForIntegerPrimaryColumn(IDbConnection connection, string schemaName,
+        private int? GetLastIdForIntegerPrimaryColumn(string schemaName,
             string tableName, string primaryColumnName)
         {
-            using var command = connection.CreateCommand();
+            using var command = Connection.CreateCommand();
             command.CommandText =
                 $"select {primaryColumnName} from {schemaName}.{tableName} ORDER BY {primaryColumnName} DESC LIMIT 1;";
 
@@ -371,10 +348,10 @@ namespace SQLDataGenerator.DataGenerators
             return result == DBNull.Value ? 1 : Convert.ToInt32(result);
         }
 
-        protected override List<object> AllPossibleValuesForReferencingColumn(IDbConnection connection,
-            string referencedTable, string referencedIdColumn)
+        protected override List<object?> AllPossibleValuesForReferencingColumn(string referencedTable,
+            string referencedIdColumn)
         {
-            using var command = connection.CreateCommand();
+            using var command = Connection.CreateCommand();
             command.CommandText =
                 $"SELECT {referencedIdColumn} FROM {ServerConfig.SchemaName}.{referencedTable} ORDER BY RANDOM() LIMIT 100";
 
@@ -393,10 +370,10 @@ namespace SQLDataGenerator.DataGenerators
             return result;
         }
 
-        private Dictionary<string, List<string>> GetPrimaryColumns(IDbConnection connection)
+        private Dictionary<string, List<string>> GetPrimaryColumns()
         {
             var primaryColumnsMap = new Dictionary<string, List<string>>();
-            using (var command = (NpgsqlCommand)connection.CreateCommand())
+            using (var command = (NpgsqlCommand)Connection.CreateCommand())
             {
                 command.CommandText = PostgreSqlServerConstants.GetPrimaryColumnQuery;
                 command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
@@ -421,12 +398,12 @@ namespace SQLDataGenerator.DataGenerators
             return primaryColumnsMap;
         }
 
-        private Dictionary<string, Dictionary<string, string>> GetForeignKeyRelationshipsMap(IDbConnection connection)
+        private Dictionary<string, Dictionary<string, string>> GetForeignKeyRelationshipsMap()
         {
             var foreignKeyMap = new Dictionary<string, Dictionary<string, string>>();
 
             // Retrieve foreign key relationships for the current table.
-            using (var command = (NpgsqlCommand)connection.CreateCommand())
+            using (var command = (NpgsqlCommand)Connection.CreateCommand())
             {
                 command.CommandText = PostgreSqlServerConstants.GetForeignKeyRelationshipsQuery;
                 command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
@@ -456,11 +433,11 @@ namespace SQLDataGenerator.DataGenerators
             return foreignKeyMap;
         }
 
-        private Dictionary<string, TableInfo> PopulateTableInfoWithBasicData(IDbConnection connection)
+        private Dictionary<string, TableInfo> PopulateTableInfoWithBasicData()
         {
             var tableInfoMap = new Dictionary<string, TableInfo>();
 
-            using (var command = (NpgsqlCommand)connection.CreateCommand())
+            using (var command = (NpgsqlCommand)Connection.CreateCommand())
             {
                 command.CommandText = PostgreSqlServerConstants.GetTableColumnsQuery;
                 command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
