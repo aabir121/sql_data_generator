@@ -189,7 +189,7 @@ namespace SQLDataGenerator.DataGenerators
         {
             try
             {
-                ExecuteNonQueryCommand(PostgreSqlServerConstants.DisableForeignKeyCheckQuery,
+                ExecuteNonQueryCommand(PostgreSqlServerQueries.DisableForeignKeyCheckQuery,
                     new List<IDbDataParameter>());
                 Console.WriteLine("Foreign key check constraint disabled.");
             }
@@ -205,7 +205,7 @@ namespace SQLDataGenerator.DataGenerators
         {
             try
             {
-                ExecuteNonQueryCommand(PostgreSqlServerConstants.EnableForeignKeyCheckQuery,
+                ExecuteNonQueryCommand(PostgreSqlServerQueries.EnableForeignKeyCheckQuery,
                     new List<IDbDataParameter>());
                 Console.WriteLine("Foreign key check constraint enabled.");
             }
@@ -219,17 +219,18 @@ namespace SQLDataGenerator.DataGenerators
 
         private HashSet<string> GetAllTableNames()
         {
-            var tableNames = new HashSet<string>();
-            using var command = Connection.CreateCommand();
-            command.CommandText = PostgreSqlServerConstants.GetTableNamesQuery;
-            command.Parameters.Add(new NpgsqlParameter("@SchemaName", ServerConfig.SchemaName));
-
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
+            var queryResult = ExecuteSqlQuery(PostgreSqlServerQueries.TableNamesQuery, new List<IDbDataParameter>
             {
-                tableNames.Add(reader.GetString(0));
-            }
+                new NpgsqlParameter("@SchemaName", ServerConfig.SchemaName)
+            });
+            
+            var tableNames = new HashSet<string>();
 
+            foreach (var row in queryResult)
+            {
+                tableNames.Add(GetDataFromRow<string>(row, PostgreSqlColumnNames.TableName) ?? string.Empty);
+            }
+            
             return tableNames;
         }
 
@@ -273,15 +274,18 @@ namespace SQLDataGenerator.DataGenerators
             IDictionary<string, List<string>> graph,
             IDictionary<string, int> indegree)
         {
-            using var command = Connection.CreateCommand();
-            command.CommandText = PostgreSqlServerConstants.GetForeignKeyConstraintsQuery;
-            command.Parameters.Add(new NpgsqlParameter("@SchemaName", ServerConfig.SchemaName));
-
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
+            var queryResult = ExecuteSqlQuery(PostgreSqlServerQueries.ForeignKeyConstraintsQuery,
+                new List<IDbDataParameter>
+                {
+                    new NpgsqlParameter("@SchemaName", ServerConfig.SchemaName)
+                });
+            
+            foreach (var row in queryResult)
             {
-                var parTab = FindLongestPrefix(tableNames, reader.GetString(1));
-                var depTab = FindLongestPrefix(tableNames, reader.GetString(0));
+                var parTab = FindLongestPrefix(tableNames, 
+                    GetDataFromRow<string>(row, PostgreSqlColumnNames.UniqueConstraintName) ?? string.Empty);
+                var depTab = FindLongestPrefix(tableNames, 
+                    GetDataFromRow<string>(row, PostgreSqlColumnNames.ConstraintName) ?? string.Empty);
 
                 if (!graph.ContainsKey(parTab))
                 {
@@ -375,7 +379,7 @@ namespace SQLDataGenerator.DataGenerators
             var primaryColumnsMap = new Dictionary<string, List<string>>();
             using (var command = (NpgsqlCommand)Connection.CreateCommand())
             {
-                command.CommandText = PostgreSqlServerConstants.GetPrimaryColumnQuery;
+                command.CommandText = PostgreSqlServerQueries.PrimaryColumnQuery;
                 command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
 
                 using (var reader = command.ExecuteReader())
@@ -405,23 +409,23 @@ namespace SQLDataGenerator.DataGenerators
             // Retrieve foreign key relationships for the current table.
             using (var command = (NpgsqlCommand)Connection.CreateCommand())
             {
-                command.CommandText = PostgreSqlServerConstants.GetForeignKeyRelationshipsQuery;
+                command.CommandText = PostgreSqlServerQueries.ForeignKeyRelationshipsQuery;
                 command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
 
                 using (var reader = command.ExecuteReader())
                 {
                     while (reader.Read())
                     {
-                        var tableName = reader.GetString(1).Split(".")[1];
+                        var tableName = reader.GetString(0).Split(".")[1];
 
                         if (!foreignKeyMap.ContainsKey(tableName))
                         {
                             foreignKeyMap[tableName] = new Dictionary<string, string>();
                         }
 
-                        var columnName = reader.GetString(2);
-                        var referencedTableName = reader.GetString(3);
-                        var referencedColumnName = reader.GetString(4);
+                        var columnName = reader.GetString(1);
+                        var referencedTableName = reader.GetString(2);
+                        var referencedColumnName = reader.GetString(3);
 
                         // Save the foreign key relationship information.
                         foreignKeyMap[tableName].Add(columnName,
@@ -439,7 +443,7 @@ namespace SQLDataGenerator.DataGenerators
 
             using (var command = (NpgsqlCommand)Connection.CreateCommand())
             {
-                command.CommandText = PostgreSqlServerConstants.GetTableColumnsQuery;
+                command.CommandText = PostgreSqlServerQueries.TableColumnsQuery;
                 command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
 
                 using (var reader = command.ExecuteReader())
