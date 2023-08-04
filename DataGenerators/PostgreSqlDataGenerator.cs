@@ -344,59 +344,65 @@ namespace SQLDataGenerator.DataGenerators
         private int? GetLastIdForIntegerPrimaryColumn(string schemaName,
             string tableName, string primaryColumnName)
         {
-            using var command = Connection.CreateCommand();
-            command.CommandText =
-                $"select {primaryColumnName} from {schemaName}.{tableName} ORDER BY {primaryColumnName} DESC LIMIT 1;";
+            var queryBuilder = new SelectQueryBuilder()
+                .ColumnsWithAliases(new Dictionary<string, string>
+                {
+                    [primaryColumnName] = PostgreSqlColumnNames.ColumnName
+                })
+                .From($"{schemaName}.{tableName}")
+                .OrderBy(new Dictionary<string, string>
+                {
+                    [primaryColumnName] = "DESC"
+                })
+                .Limit<NpgsqlConnection>(1);
 
-            var result = command.ExecuteScalar();
-            return result == DBNull.Value ? 1 : Convert.ToInt32(result);
+            var queryResult = ExecuteSqlQuery(queryBuilder.Build(), new List<IDbDataParameter>());
+            return GetDataFromRow<int>(queryResult.FirstOrDefault(), PostgreSqlColumnNames.ColumnName);
         }
 
         protected override List<object?> AllPossibleValuesForReferencingColumn(string referencedTable,
             string referencedIdColumn)
         {
-            using var command = Connection.CreateCommand();
-            command.CommandText =
-                $"SELECT {referencedIdColumn} FROM {ServerConfig.SchemaName}.{referencedTable} ORDER BY RANDOM() LIMIT 100";
-
-            var result = new List<object>();
-
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
-            {
-                var value = reader[0];
-                if (value != DBNull.Value) // Check for possible null values
+            var queryBuilder = new SelectQueryBuilder()
+                .ColumnsWithAliases(new Dictionary<string, string> { 
+                    [referencedIdColumn] = PostgreSqlColumnNames.ColumnName
+                })
+                .From($"{ServerConfig.SchemaName}.{referencedTable}")
+                .OrderBy(new Dictionary<string, string>
                 {
-                    result.Add(value);
-                }
-            }
+                    ["RANDOM()"] = "DESC"
+                })
+                .Limit<NpgsqlConnection>(100);
 
-            return result;
+            var queryResult = ExecuteSqlQuery(queryBuilder.Build(), new List<IDbDataParameter>());
+            return queryResult.Select(row => GetDataFromRow<object>(row, PostgreSqlColumnNames.ColumnName)).ToList();
         }
 
         private Dictionary<string, List<string>> GetPrimaryColumns()
         {
-            var primaryColumnsMap = new Dictionary<string, List<string>>();
-            using (var command = (NpgsqlCommand)Connection.CreateCommand())
+            var queryResult = ExecuteSqlQuery(PostgreSqlServerQueries.PrimaryColumnQuery, new List<IDbDataParameter>
             {
-                command.CommandText = PostgreSqlServerQueries.PrimaryColumnQuery;
-                command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
+                new NpgsqlParameter("@SchemaName", ServerConfig.SchemaName)
+            });
 
-                using (var reader = command.ExecuteReader())
+            var primaryColumnsMap = new Dictionary<string, List<string>>();
+
+            foreach (var row in queryResult)
+            {
+                var tableName = GetDataFromRow<string>(row, PostgreSqlColumnNames.TableName);
+                var primaryColumnName = GetDataFromRow<string>(row, PostgreSqlColumnNames.ColumnName);
+
+                if (tableName == null || primaryColumnName == null)
                 {
-                    while (reader.Read())
-                    {
-                        var tableName = reader.GetString(0);
-                        var primaryColumnName = reader.GetString(1);
-
-                        if (!primaryColumnsMap.ContainsKey(tableName))
-                        {
-                            primaryColumnsMap[tableName] = new List<string>();
-                        }
-
-                        primaryColumnsMap[tableName].Add(primaryColumnName);
-                    }
+                    continue;
                 }
+
+                if (!primaryColumnsMap.ContainsKey(tableName))
+                {
+                    primaryColumnsMap[tableName] = new List<string>();
+                }
+
+                primaryColumnsMap[tableName].Add(primaryColumnName);
             }
 
             return primaryColumnsMap;
@@ -404,34 +410,34 @@ namespace SQLDataGenerator.DataGenerators
 
         private Dictionary<string, Dictionary<string, string>> GetForeignKeyRelationshipsMap()
         {
+            var queryResult = ExecuteSqlQuery(PostgreSqlServerQueries.ForeignKeyRelationshipsQuery, 
+                new List<IDbDataParameter>
+                {
+                    new NpgsqlParameter("@SchemaName", ServerConfig.SchemaName)
+                });
+
             var foreignKeyMap = new Dictionary<string, Dictionary<string, string>>();
 
-            // Retrieve foreign key relationships for the current table.
-            using (var command = (NpgsqlCommand)Connection.CreateCommand())
+            foreach(var row in queryResult)
             {
-                command.CommandText = PostgreSqlServerQueries.ForeignKeyRelationshipsQuery;
-                command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
+                var tableName = GetDataFromRow<string>(row, PostgreSqlColumnNames.TableName)?.Split(".")[1];
+                var columnName = GetDataFromRow<string>(row, PostgreSqlColumnNames.ColumnName);
+                var referencedTableName = GetDataFromRow<string>(row, PostgreSqlColumnNames.ReferencedTableName);
+                var referencedColumnName = GetDataFromRow<string>(row, PostgreSqlColumnNames.ReferencedColumnName);
 
-                using (var reader = command.ExecuteReader())
+                if (tableName == null || columnName == null || referencedTableName == null)
                 {
-                    while (reader.Read())
-                    {
-                        var tableName = reader.GetString(0).Split(".")[1];
-
-                        if (!foreignKeyMap.ContainsKey(tableName))
-                        {
-                            foreignKeyMap[tableName] = new Dictionary<string, string>();
-                        }
-
-                        var columnName = reader.GetString(1);
-                        var referencedTableName = reader.GetString(2);
-                        var referencedColumnName = reader.GetString(3);
-
-                        // Save the foreign key relationship information.
-                        foreignKeyMap[tableName].Add(columnName,
-                            $"{referencedTableName.Split(".")[1]}.{referencedColumnName}");
-                    }
+                    continue;
                 }
+
+                if (!foreignKeyMap.ContainsKey(tableName))
+                {
+                    foreignKeyMap[tableName] = new Dictionary<string, string>();
+                }
+
+                // Save the foreign key relationship information.
+                foreignKeyMap[tableName].Add(columnName,
+                    $"{referencedTableName.Split(".")[1]}.{referencedColumnName}");
             }
 
             return foreignKeyMap;
@@ -439,33 +445,35 @@ namespace SQLDataGenerator.DataGenerators
 
         private Dictionary<string, TableInfo> PopulateTableInfoWithBasicData()
         {
+            var queryResult = ExecuteSqlQuery(PostgreSqlServerQueries.ForeignKeyRelationshipsQuery,
+                new List<IDbDataParameter>
+                {
+                    new NpgsqlParameter("@SchemaName", ServerConfig.SchemaName)
+                });
+
             var tableInfoMap = new Dictionary<string, TableInfo>();
 
-            using (var command = (NpgsqlCommand)Connection.CreateCommand())
+            foreach(var row in queryResult)
             {
-                command.CommandText = PostgreSqlServerQueries.TableColumnsQuery;
-                command.Parameters.AddWithValue("@SchemaName", NpgsqlDbType.Text, ServerConfig.SchemaName);
+                var tableName = GetDataFromRow<string>(row, PostgreSqlColumnNames.TableName);
+                var columnName = GetDataFromRow<string>(row, PostgreSqlColumnNames.ColumnName);
+                var dataType = GetDataFromRow<string>(row, PostgreSqlColumnNames.DataType);
+                int? maxLength = GetDataFromRow<int>(row, PostgreSqlColumnNames.CharacterMaximumLength);
 
-                using (var reader = command.ExecuteReader())
+                if (tableName == null || columnName == null || dataType == null)
                 {
-                    while (reader.Read())
-                    {
-                        var tableName = reader.GetString(0);
-
-                        if (!tableInfoMap.ContainsKey(tableName))
-                        {
-                            tableInfoMap[tableName] = new TableInfo();
-                        }
-
-                        var columnName = reader.GetString(1);
-                        var dataType = reader.GetString(2);
-                        int? maxLength = reader.GetValue(3) == DBNull.Value ? null : reader.GetInt32(3);
-
-                        tableInfoMap[tableName].Columns.Add(columnName);
-                        tableInfoMap[tableName].ColumnTypes.Add(columnName, dataType);
-                        tableInfoMap[tableName].ColumnMaxLengths.Add(columnName, maxLength);
-                    }
+                    continue;
                 }
+
+                if (!tableInfoMap.ContainsKey(tableName))
+                {
+                    tableInfoMap[tableName] = new TableInfo();
+                }
+
+
+                tableInfoMap[tableName].Columns.Add(columnName);
+                tableInfoMap[tableName].ColumnTypes.Add(columnName, dataType);
+                tableInfoMap[tableName].ColumnMaxLengths.Add(columnName, maxLength);
             }
 
             return tableInfoMap;
