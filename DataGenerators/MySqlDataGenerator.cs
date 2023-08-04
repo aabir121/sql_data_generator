@@ -170,7 +170,7 @@ public class MySqlDataGenerator : DataGenerator
     {
         try
         {
-            ExecuteNonQueryCommand(MySqlServerConstants.DisableForeignKeyCheckQuery, new List<IDbDataParameter>());
+            ExecuteNonQueryCommand(MySqlQueries.DisableForeignKeyCheckQuery, new List<IDbDataParameter>());
             Console.WriteLine("Foreign key check constraint disabled.");
         }
         catch (Exception ex)
@@ -185,7 +185,7 @@ public class MySqlDataGenerator : DataGenerator
     {
         try
         {
-            ExecuteNonQueryCommand(MySqlServerConstants.EnableForeignKeyCheckQuery, new List<IDbDataParameter>());
+            ExecuteNonQueryCommand(MySqlQueries.EnableForeignKeyCheckQuery, new List<IDbDataParameter>());
             Console.WriteLine("Foreign key check constraint enabled.");
         }
         catch (Exception ex)
@@ -198,14 +198,16 @@ public class MySqlDataGenerator : DataGenerator
 
     private HashSet<string> GetAllTableNames()
     {
-        var tableNames = new HashSet<string>();
-        using var command = Connection.CreateCommand();
-        command.CommandText = MySqlServerConstants.GetTableNamesQuery;
+        var queryResult = ExecuteSqlQuery(MySqlQueries.TableNamesQuery,
+            new List<IDbDataParameter>
+            {
+                new MySqlParameter("@DatabaseName", ServerConfig.DatabaseName)
+            });
 
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        var tableNames = new HashSet<string>();
+        foreach (var row in queryResult)
         {
-            tableNames.Add(reader.GetString(0));
+            tableNames.Add(GetDataFromRow<string>(row, MySqlColumnNames.ColumnName) ?? string.Empty);
         }
 
         return tableNames;
@@ -229,15 +231,19 @@ public class MySqlDataGenerator : DataGenerator
     private void PopulateTableGraphAndIndegree(IDictionary<string, List<string>> graph,
         IDictionary<string, int> indegree)
     {
-        using var command = Connection.CreateCommand();
-        command.CommandText = MySqlServerConstants.GetDependencyQuery;
-        command.Parameters.Add(new MySqlParameter("@DatabaseName", ServerConfig.DatabaseName));
-
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        var queryResult = ExecuteSqlQuery(MySqlQueries.DependencyQuery, new List<IDbDataParameter>
         {
-            var parTab = reader.GetString(2);
-            var depTab = reader.GetString(0);
+            new MySqlParameter("@DatabaseName", ServerConfig.DatabaseName)
+        });
+        foreach (var row in queryResult)
+        {
+            var parTab = GetDataFromRow<string>(row, MySqlColumnNames.ReferencedTableName);
+            var depTab = GetDataFromRow<string>(row, MySqlColumnNames.TableName);
+
+            if (parTab == null || depTab == null)
+            {
+                continue;
+            }
 
             if (!graph.ContainsKey(parTab))
             {
@@ -252,62 +258,74 @@ public class MySqlDataGenerator : DataGenerator
     private int? GetLastIdForIntegerPrimaryColumn(string tableName,
         string primaryColumnName)
     {
-        using var command = Connection.CreateCommand();
-        command.CommandText =
-            $"select {primaryColumnName} from {tableName} ORDER BY {primaryColumnName} DESC LIMIT 1;";
+        var queryBuilder = new SelectQueryBuilder()
+            .ColumnsWithAliases(new Dictionary<string, string>
+            {
+                [primaryColumnName] = MySqlColumnNames.ColumnName
+            })
+            .From($"{tableName}")
+            .OrderBy(new Dictionary<string, string>
+            {
+                [primaryColumnName] = "DESC"
+            })
+            .Limit<MySqlConnection>(1);
 
-        var result = command.ExecuteScalar();
-        return result == DBNull.Value ? 1 : Convert.ToInt32(result);
+        var queryResult = ExecuteSqlQuery(queryBuilder.Build(), new List<IDbDataParameter>());
+
+        if (queryResult.Count == 1)
+        {
+            return GetDataFromRow<int>(queryResult[0], SqlServerColumnNames.ColumnName);
+        }
+
+        return null;
     }
 
     protected override List<object?> AllPossibleValuesForReferencingColumn(string referencedTable,
         string referencedIdColumn)
     {
-        using var command = Connection.CreateCommand();
-        command.CommandText =
-            $"SELECT {referencedIdColumn} FROM {referencedTable} ORDER BY RAND() LIMIT 100";
-
-        var result = new List<object>();
-
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-        {
-            var value = reader[0];
-            if (value != DBNull.Value) // Check for possible null values
+        var queryBuilder = new SelectQueryBuilder()
+            .ColumnsWithAliases(new Dictionary<string, string>
             {
-                result.Add(value);
-            }
-        }
+                [referencedIdColumn] = MySqlColumnNames.ColumnName
+            })
+            .From($"{referencedTable}")
+            .OrderBy(new Dictionary<string, string>
+            {
+                ["RAND()"] = "DESC"
+            })
+            .Limit<MySqlConnection>(100);
 
-        return result;
+        var queryResult = ExecuteSqlQuery(queryBuilder.Build(), new List<IDbDataParameter>());
+
+        return queryResult.Select(row => GetDataFromRow<object>(row, MySqlColumnNames.ColumnName)).ToList();
     }
 
     private Dictionary<string, Dictionary<string, string>> PopulateTableDepMap()
     {
         var tableDepMap = new Dictionary<string, Dictionary<string, string>>();
 
-        // Retrieve foreign key relationships for the current table.
-        using (var command = (MySqlCommand)Connection.CreateCommand())
+        var queryResult = ExecuteSqlQuery(MySqlQueries.DependencyQuery, new List<IDbDataParameter>
         {
-            command.CommandText = MySqlServerConstants.GetDependencyQuery;
-            command.Parameters.AddWithValue("@DatabaseName", ServerConfig.DatabaseName);
-
-            using (var reader = command.ExecuteReader())
+            new MySqlParameter("@DatabaseName", ServerConfig.DatabaseName)
+        });
+        foreach (var row in queryResult)
+        {
+            var tableName = GetDataFromRow<string>(row, MySqlColumnNames.TableName);
+            var columnName = GetDataFromRow<string>(row, MySqlColumnNames.ColumnName);
+            if (tableName == null || columnName == null)
             {
-                while (reader.Read())
-                {
-                    var tableName = reader.GetString(0);
-                    var columnName = reader.GetString(1);
-                    var constraintName = $"{reader.GetString(2)}.{reader.GetString(3)}";
-
-                    if (!tableDepMap.ContainsKey(tableName))
-                    {
-                        tableDepMap[tableName] = new Dictionary<string, string>();
-                    }
-
-                    tableDepMap[tableName][columnName] = constraintName;
-                }
+                continue;
             }
+
+            var constraintName =
+                $"{GetDataFromRow<string>(row, MySqlColumnNames.ReferencedTableName)}.{GetDataFromRow<string>(row, MySqlColumnNames.ReferencedColumnName)}";
+
+            if (!tableDepMap.ContainsKey(tableName))
+            {
+                tableDepMap[tableName] = new Dictionary<string, string>();
+            }
+
+            tableDepMap[tableName][columnName] = constraintName;
         }
 
         return tableDepMap;
@@ -317,37 +335,34 @@ public class MySqlDataGenerator : DataGenerator
     {
         var tableInfoMap = new Dictionary<string, TableInfo>();
 
-        using (var command = (MySqlCommand)Connection.CreateCommand())
+        var queryResult = ExecuteSqlQuery(MySqlQueries.ColumnsQuery, new List<IDbDataParameter>
         {
-            command.CommandText = MySqlServerConstants.GetColumnsQuery;
-            command.Parameters.AddWithValue("@DatabaseName", ServerConfig.DatabaseName);
+            new MySqlParameter("@DatabaseName", ServerConfig.DatabaseName)
+        });
 
-            using (var reader = command.ExecuteReader())
+        foreach (var row in queryResult)
+        {
+            var tableName = GetDataFromRow<string>(row, MySqlColumnNames.TableName);
+            var columnName = GetDataFromRow<string>(row, MySqlColumnNames.ColumnName);
+            var dataType = GetDataFromRow<string>(row, MySqlColumnNames.DataType);
+            var isPrimary = "PRI".Equals(GetDataFromRow<string>(row, MySqlColumnNames.ColumnKey));
+            int? maxLength = GetDataFromRow<int>(row, MySqlColumnNames.CharacterMaximumLength);
+
+            if (tableName == null || columnName == null || dataType == null) continue;
+
+            if (!tableInfoMap.ContainsKey(tableName))
             {
-                while (reader.Read())
-                {
-                    var tableName = reader.GetString(0);
-                    if (!tableInfoMap.ContainsKey(tableName))
-                    {
-                        tableInfoMap[tableName] = new TableInfo();
-                    }
-
-                    var columnName = reader.GetString(1);
-                    var dataType = reader.GetString(2);
-
-                    var isPrimary = "PRI".Equals(reader.GetString(3));
-                    if (isPrimary)
-                    {
-                        tableInfoMap[tableName].PrimaryColumns.Add(columnName);
-                    }
-
-                    int? maxLength = reader.GetValue(4) == DBNull.Value ? null : reader.GetInt32(4);
-
-                    tableInfoMap[tableName].Columns.Add(columnName);
-                    tableInfoMap[tableName].ColumnTypes.Add(columnName, dataType);
-                    tableInfoMap[tableName].ColumnMaxLengths.Add(columnName, maxLength);
-                }
+                tableInfoMap[tableName] = new TableInfo();
             }
+
+            if (isPrimary)
+            {
+                tableInfoMap[tableName].PrimaryColumns.Add(columnName);
+            }
+
+            tableInfoMap[tableName].Columns.Add(columnName);
+            tableInfoMap[tableName].ColumnTypes.Add(columnName, dataType);
+            tableInfoMap[tableName].ColumnMaxLengths.Add(columnName, maxLength);
         }
 
         return tableInfoMap;

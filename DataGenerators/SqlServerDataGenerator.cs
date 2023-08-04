@@ -214,10 +214,10 @@ namespace SQLDataGenerator.DataGenerators
             string tableName, string primaryColumnName)
         {
             var queryBuilder = new SelectQueryBuilder()
-                .Limit(1)
+                .Limit<SqlConnection>(1)
                 .ColumnsWithAliases(new Dictionary<string, string>
                 {
-                    [primaryColumnName] = "COLUMN_NAME"
+                    [primaryColumnName] = SqlServerColumnNames.ColumnName
                 })
                 .From($"{schemaName}.{tableName}")
                 .OrderBy(new Dictionary<string, string>
@@ -239,7 +239,7 @@ namespace SQLDataGenerator.DataGenerators
             string referencedIdColumn)
         {
             var queryBuilder = new SelectQueryBuilder()
-                .Limit(100)
+                .Limit<SqlConnection>(100)
                 .ColumnsWithAliases(new Dictionary<string, string>
                 {
                     [referencedIdColumn] = SqlServerColumnNames.ColumnName

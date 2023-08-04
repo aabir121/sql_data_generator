@@ -1,4 +1,6 @@
 using System.Text;
+using MySql.Data.MySqlClient;
+using Npgsql;
 
 namespace SQLDataGenerator.Helpers;
 
@@ -24,8 +26,13 @@ public class SelectQueryBuilder
         return this;
     }
 
-    public SelectQueryBuilder Limit(int limit)
+    public SelectQueryBuilder Limit<T>(int limit)
     {
+        if (typeof(T) is MySqlConnection || typeof(T) is NpgsqlConnection)
+        {
+            _query.Append($" LIMIT {limit}");
+        }
+        
         _query.Append($" TOP({limit}) ");
         return this;
     }
