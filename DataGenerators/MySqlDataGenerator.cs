@@ -258,7 +258,7 @@ public class MySqlDataGenerator : DataGenerator
     private int? GetLastIdForIntegerPrimaryColumn(string tableName,
         string primaryColumnName)
     {
-        var queryBuilder = new SelectQueryBuilder()
+        var queryBuilder = new SelectQueryBuilder(DbServerType.MySql)
             .ColumnsWithAliases(new Dictionary<string, string>
             {
                 [primaryColumnName] = MySqlColumnNames.ColumnName
@@ -268,7 +268,7 @@ public class MySqlDataGenerator : DataGenerator
             {
                 [primaryColumnName] = "DESC"
             })
-            .Limit<MySqlConnection>(1);
+            .Limit(1);
 
         var queryResult = ExecuteSqlQuery(queryBuilder.Build(), new List<IDbDataParameter>());
 
@@ -283,7 +283,7 @@ public class MySqlDataGenerator : DataGenerator
     protected override List<object?> AllPossibleValuesForReferencingColumn(string referencedTable,
         string referencedIdColumn)
     {
-        var queryBuilder = new SelectQueryBuilder()
+        var queryBuilder = new SelectQueryBuilder(DbServerType.MySql)
             .ColumnsWithAliases(new Dictionary<string, string>
             {
                 [referencedIdColumn] = MySqlColumnNames.ColumnName
@@ -293,7 +293,7 @@ public class MySqlDataGenerator : DataGenerator
             {
                 ["RAND()"] = "DESC"
             })
-            .Limit<MySqlConnection>(100);
+            .Limit(100);
 
         var queryResult = ExecuteSqlQuery(queryBuilder.Build(), new List<IDbDataParameter>());
 

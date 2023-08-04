@@ -344,7 +344,7 @@ namespace SQLDataGenerator.DataGenerators
         private int? GetLastIdForIntegerPrimaryColumn(string schemaName,
             string tableName, string primaryColumnName)
         {
-            var queryBuilder = new SelectQueryBuilder()
+            var queryBuilder = new SelectQueryBuilder(DbServerType.PostgreSql)
                 .ColumnsWithAliases(new Dictionary<string, string>
                 {
                     [primaryColumnName] = PostgreSqlColumnNames.ColumnName
@@ -354,7 +354,7 @@ namespace SQLDataGenerator.DataGenerators
                 {
                     [primaryColumnName] = "DESC"
                 })
-                .Limit<NpgsqlConnection>(1);
+                .Limit(1);
 
             var queryResult = ExecuteSqlQuery(queryBuilder.Build(), new List<IDbDataParameter>());
             return GetDataFromRow<int>(queryResult.FirstOrDefault(), PostgreSqlColumnNames.ColumnName);
@@ -363,7 +363,7 @@ namespace SQLDataGenerator.DataGenerators
         protected override List<object?> AllPossibleValuesForReferencingColumn(string referencedTable,
             string referencedIdColumn)
         {
-            var queryBuilder = new SelectQueryBuilder()
+            var queryBuilder = new SelectQueryBuilder(DbServerType.PostgreSql)
                 .ColumnsWithAliases(new Dictionary<string, string> { 
                     [referencedIdColumn] = PostgreSqlColumnNames.ColumnName
                 })
@@ -372,7 +372,7 @@ namespace SQLDataGenerator.DataGenerators
                 {
                     ["RANDOM()"] = "DESC"
                 })
-                .Limit<NpgsqlConnection>(100);
+                .Limit(100);
 
             var queryResult = ExecuteSqlQuery(queryBuilder.Build(), new List<IDbDataParameter>());
             return queryResult.Select(row => GetDataFromRow<object>(row, PostgreSqlColumnNames.ColumnName)).ToList();

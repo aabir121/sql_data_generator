@@ -213,8 +213,8 @@ namespace SQLDataGenerator.DataGenerators
         private int? GetLastIdForIntegerPrimaryColumn(string schemaName,
             string tableName, string primaryColumnName)
         {
-            var queryBuilder = new SelectQueryBuilder()
-                .Limit<SqlConnection>(1)
+            var queryBuilder = new SelectQueryBuilder(DbServerType.SqlServer)
+                .Limit(1)
                 .ColumnsWithAliases(new Dictionary<string, string>
                 {
                     [primaryColumnName] = SqlServerColumnNames.ColumnName
@@ -238,8 +238,8 @@ namespace SQLDataGenerator.DataGenerators
         protected override List<object?> AllPossibleValuesForReferencingColumn(string referencedTable,
             string referencedIdColumn)
         {
-            var queryBuilder = new SelectQueryBuilder()
-                .Limit<SqlConnection>(100)
+            var queryBuilder = new SelectQueryBuilder(DbServerType.SqlServer)
+                .Limit(100)
                 .ColumnsWithAliases(new Dictionary<string, string>
                 {
                     [referencedIdColumn] = SqlServerColumnNames.ColumnName

@@ -1,15 +1,16 @@
 using System.Text;
-using MySql.Data.MySqlClient;
-using Npgsql;
+using SQLDataGenerator.Models;
 
 namespace SQLDataGenerator.Helpers;
 
 public class SelectQueryBuilder
 {
     private readonly StringBuilder _query;
+    private readonly DbServerType _serverType;
 
-    public SelectQueryBuilder()
+    public SelectQueryBuilder(DbServerType dbServerType)
     {
+        _serverType = dbServerType;
         _query = new StringBuilder();
         _query.Append("SELECT ");
     }
@@ -26,14 +27,15 @@ public class SelectQueryBuilder
         return this;
     }
 
-    public SelectQueryBuilder Limit<T>(int limit)
+    public SelectQueryBuilder Limit(int limit)
     {
-        if (typeof(T) is MySqlConnection || typeof(T) is NpgsqlConnection)
+        if (_serverType == DbServerType.SqlServer)
         {
-            _query.Append($" LIMIT {limit}");
+            _query.Append($" TOP({limit}) ");
+            return this;
         }
-        
-        _query.Append($" TOP({limit}) ");
+
+        _query.Append($" LIMIT {limit}");
         return this;
     }
 
