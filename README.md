@@ -14,10 +14,12 @@ The Data Generator Tool is a C# .NET Core console application that allows you to
 - Re-enables foreign key constraints after successful data insertion.
 
 ## Limitations
-- Assumes that there is only one primary column per table
-- Assumes the primary column is of type Integer.
-- While populating the string column cannot take the max length into account.
-- Only a integer range can be provided for now for possible values. Min max values for other column types are still not supported.
+The tool's current design has a few limitations:
+
+- It assumes there's only one main column in each table that serves as the primary identifier.
+- It can only handle a single schema in the database and doesn't support multiple schemas.
+- For MySQL and PostgreSQL, the tool can manage dependencies between tables during data generation. However, this capability is currently not available for SQL Server.
+- Currently, you can only specify a range of integer values for generating data. Other column types don't yet support defining minimum and maximum values.
 
 ## Requirements
 
