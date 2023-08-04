@@ -357,7 +357,12 @@ namespace SQLDataGenerator.DataGenerators
                 .Limit(1);
 
             var queryResult = ExecuteSqlQuery(queryBuilder.Build(), new List<IDbDataParameter>());
-            return GetDataFromRow<int>(queryResult.FirstOrDefault(), PostgreSqlColumnNames.ColumnName);
+            if (queryResult.Count == 1)
+            {
+                return GetDataFromRow<int>(queryResult[0], PostgreSqlColumnNames.ColumnName);
+            }
+
+            return 0;
         }
 
         protected override List<object?> AllPossibleValuesForReferencingColumn(string referencedTable,

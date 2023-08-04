@@ -232,7 +232,7 @@ namespace SQLDataGenerator.DataGenerators
                 return GetDataFromRow<int>(queryResult[0], SqlServerColumnNames.ColumnName);
             }
 
-            return null;
+            return 0;
         }
 
         protected override List<object?> AllPossibleValuesForReferencingColumn(string referencedTable,
