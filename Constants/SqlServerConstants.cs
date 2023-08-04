@@ -13,7 +13,7 @@ public static class SqlServerColumnNames
 public static class SqlServerQueries
 {
     public const string TableNamesQuery =
-        "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @SchemaName";
+        "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @SchemaName AND TABLE_TYPE='BASE TABLE'";
 
     public const string TableColumnsQuery =
         @"SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
