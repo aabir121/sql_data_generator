@@ -1,6 +1,6 @@
 # Data Generator Tool
 
-The Data Generator Tool is a C# .NET Core console application that allows you to generate random data for SQL Server databases. It provides an interactive command-line interface to specify the config file location, which contains the database server, database name, schema name, table configurations, and the number of rows to generate data. The tool aims to abide by clean coding principles, SOLID principles, and design patterns to maintain code organization and extensibility. Currently, this tool assumes that no rows are present in any of those tables in the database, and the primary key is an integer column.
+The Data Generator Tool is a C# .NET Core console application that allows you to generate random data for SQL Server databases. It provides an interactive command-line interface to specify the config file location, which contains the database server, database name, schema name, table configurations, and the number of rows to generate data. The tool aims to abide by clean coding principles, SOLID principles, and design patterns to maintain code organization and extensibility.
 
 ## Features
 
@@ -14,9 +14,12 @@ The Data Generator Tool is a C# .NET Core console application that allows you to
 - Re-enables foreign key constraints after successful data insertion.
 
 ## Limitations
-- Assumes that there is only one primary column per table
-- Assumes the primary column is of type Integer.
-- While populating the string column cannot take the max length into account.
+The tool's current design has a few limitations:
+
+- It assumes there's only one main column in each table that serves as the primary identifier.
+- It can only handle a single schema in the database and doesn't support multiple schemas.
+- For MySQL and PostgreSQL, the tool can manage dependencies between tables during data generation. However, this capability is currently not available for SQL Server.
+- Currently, you can only specify a range of integer values for generating data. Other column types don't yet support defining minimum and maximum values.
 
 ## Requirements
 
